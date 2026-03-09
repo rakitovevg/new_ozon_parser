@@ -53,11 +53,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build-and-push
-    env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-    if: ${{ env.DEPLOY_HOST != '' }}
     steps:
       - name: Deploy via SSH
+        if: ${{ secrets.DEPLOY_HOST != '' }}
         uses: appleboy/ssh-action@v1.0.3
         env:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
