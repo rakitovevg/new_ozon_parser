@@ -55,7 +55,7 @@ jobs:
     needs: build-and-push
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-    if: ${{ secrets.DEPLOY_HOST != '' }}
+    if: ${{ env.DEPLOY_HOST != '' }}
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
