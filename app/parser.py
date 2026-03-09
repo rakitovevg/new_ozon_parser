@@ -42,8 +42,28 @@ def _get_proxy_for_selenium(proxy_url: Optional[str]) -> Optional[dict]:
     """Преобразует URL прокси в строку для --proxy-server."""
     if not proxy_url or not proxy_url.strip():
         return None
+    from urllib.parse import urlparse
+
     raw = proxy_url.strip()
-    return {"server": raw}
+    u = urlparse(raw)
+
+    # Если пользователь ввёл уже host:port — используем как есть
+    if not u.scheme and ":" in raw and "@" not in raw:
+        return {"server": raw}
+
+    scheme = (u.scheme or "").lower()
+    host = u.hostname or ""
+    # для HTTP-прокси без порта по умолчанию 80, для socks5 — 1080
+    port = u.port or (1080 if scheme.startswith("socks") else 80)
+
+    if scheme.startswith("socks"):
+        # Для SOCKS Chrome ожидает схему
+        server = f"{scheme}://{host}:{port}"
+    else:
+        # Для обычного HTTP/HTTPS — только host:port
+        server = f"{host}:{port}"
+
+    return {"server": server}
 
 
 def run_parse_listing_sync(
