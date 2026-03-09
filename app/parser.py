@@ -92,7 +92,7 @@ def run_parse_listing_sync(
     found_products = []
 
     try:
-        driver = uc.Chrome(options=options, version_main=CHROME_VERSION_MAIN)
+        driver = uc.Chrome(options=options)
         driver.set_page_load_timeout(60)
         # Небольшая задержка «как человек»
         time.sleep(random.uniform(1.0, 2.5))
