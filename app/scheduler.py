@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 JOB_PREFIX = "search_task_"
 JOB_GLOBAL_RUN_ALL = "global_run_all"
+TASK_HARD_TIMEOUT_SECONDS = 180  # жёсткий таймаут одной задачи парсинга
 _executor = ThreadPoolExecutor(max_workers=2)
 
 _cancel_requested: set[int] = set()
@@ -106,20 +107,32 @@ async def run_search_task(task_id: int, from_scheduler: bool = False) -> None:
         _found_products_callback_sync(task_id, loop, rec)
 
     try:
-        await loop.run_in_executor(
-            _executor,
-            lambda: run_parse_listing_sync(
-                url=url,
-                min_price=min_price_float,
-                proxy_url=proxy_url,
-                send_telegram_callback=telegram_cb,
-                task_id=task_id,
-                cancel_check_callback=cancel_cb,
-                found_products_callback=found_cb,
+        await asyncio.wait_for(
+            loop.run_in_executor(
+                _executor,
+                lambda: run_parse_listing_sync(
+                    url=url,
+                    min_price=min_price_float,
+                    proxy_url=proxy_url,
+                    send_telegram_callback=telegram_cb,
+                    task_id=task_id,
+                    cancel_check_callback=cancel_cb,
+                    found_products_callback=found_cb,
+                ),
             ),
+            timeout=TASK_HARD_TIMEOUT_SECONDS,
         )
         final_status = "cancelled" if is_cancel_requested(task_id) else "completed"
         run_error = None
+    except asyncio.TimeoutError:
+        logger.error(
+            "run_search_task: task_id=%s hard timeout after %s seconds",
+            task_id,
+            TASK_HARD_TIMEOUT_SECONDS,
+        )
+        request_cancel(task_id)
+        final_status = "failed"
+        run_error = f"Timeout after {TASK_HARD_TIMEOUT_SECONDS} seconds"
     except Exception as e:
         logger.exception("run_search_task: task_id=%s error", task_id)
         final_status = "failed"
