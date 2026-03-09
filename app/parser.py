@@ -96,8 +96,8 @@ def run_parse_listing_sync(
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--headless=new")
+        #options.add_argument("--disable-gpu")
+        #options.add_argument("--headless=new")
 
         if proxy_url:
             proxy_dict = _get_proxy_for_selenium(proxy_url)
