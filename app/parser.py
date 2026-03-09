@@ -98,6 +98,11 @@ def run_parse_listing_sync(
     USER_AGENT = os.getenv("CHROME_USER_AGENT") or ""
     USER_DATA_DIR = os.getenv("CHROME_USER_DATA_DIR") or ""
     COOKIES_PATH = os.getenv("OZON_COOKIES_JSON") or ""
+    # Локальный таймаут ожидания плиток (по умолчанию = SELECTOR_WAIT_TIMEOUT)
+    try:
+        WAIT_TIMEOUT = int(os.getenv("OZON_WAIT_TIMEOUT", str(SELECTOR_WAIT_TIMEOUT)))
+    except ValueError:
+        WAIT_TIMEOUT = SELECTOR_WAIT_TIMEOUT
 
     try:
         options = Options()
@@ -167,7 +172,7 @@ def run_parse_listing_sync(
             except Exception:
                 logger.exception("Не удалось сохранить скриншот для задачи %s", task_id)
 
-        wait = WebDriverWait(driver, SELECTOR_WAIT_TIMEOUT)
+        wait = WebDriverWait(driver, WAIT_TIMEOUT)
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, SELECTOR_TILE_ROOT)))
         time.sleep(random.uniform(0.5, 1.5))
         items = driver.find_elements(By.CSS_SELECTOR, SELECTOR_TILE_ROOT)
@@ -209,6 +214,35 @@ def run_parse_listing_sync(
         return found_products
 
     except Exception as e:
+        # При таймауте делаем скриншот и логируем HTML для отладки
+        from selenium.common.exceptions import TimeoutException
+
+        if isinstance(e, TimeoutException) and driver:
+            timeout_screenshot = f"/tmp/ozon_task_{task_id}_timeout.png"
+            timeout_html = f"/tmp/ozon_task_{task_id}_timeout.html"
+            try:
+                driver.save_screenshot(timeout_screenshot)
+                logger.info(
+                    "Скриншот таймаута задачи %s сохранён в %s",
+                    task_id,
+                    timeout_screenshot,
+                )
+            except Exception:
+                logger.exception(
+                    "Не удалось сохранить скриншот таймаута для задачи %s", task_id
+                )
+            try:
+                Path(timeout_html).write_text(driver.page_source, encoding="utf-8")
+                logger.info(
+                    "HTML таймаута задачи %s сохранён в %s",
+                    task_id,
+                    timeout_html,
+                )
+            except Exception:
+                logger.exception(
+                    "Не удалось сохранить HTML таймаута для задачи %s", task_id
+                )
+
         logger.exception("run_parse_listing_sync: task_id=%s error %s", task_id, e)
         raise
     finally:
