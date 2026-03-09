@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 
 OZON_BASE_URL = "https://www.ozon.ru"
 
+# Маркеры страницы блокировки Ozon (антибот)
+OZON_BLOCK_PAGE_MARKERS = ("Доступ ограничен", "доступ ограничен", "Инцидент:")
+
 
 def build_search_url(brand_name: str, brand_code: str, model: str) -> str:
     """URL = URL1 + brand.name + '-' + brand.code + URL2 + model."""
@@ -147,21 +150,49 @@ def run_parse_listing_sync(
         driver.set_page_load_timeout(60)
         # Небольшая задержка «как человек»
         time.sleep(random.uniform(1.0, 2.5))
-        driver.get(url)
 
-        # Подгрузка сохранённых кук (если есть файл)
-        if COOKIES_PATH:
+        # Если есть файл с куками, сначала заходим на базовый домен, ставим куки и только потом идём на нужный URL.
+        # Так куки реально отправятся в запросе к листингу, а не просто добавятся в уже загруженную страницу.
+        def _load_start_page_with_cookies():
+            nonlocal driver
+            if not COOKIES_PATH:
+                driver.get(url)
+                return
+
+            cookies_file = Path(COOKIES_PATH)
+            if not cookies_file.is_file():
+                driver.get(url)
+                return
+
             try:
-                cookies_file = Path(COOKIES_PATH)
-                if cookies_file.is_file():
-                    cookies = json.loads(cookies_file.read_text(encoding="utf-8"))
-                    for c in cookies:
-                        try:
-                            driver.add_cookie(c)
-                        except Exception:
-                            continue
+                # Сначала открываем главную Ozon, чтобы домен совпал для add_cookie
+                driver.get(OZON_BASE_URL)
+                cookies = json.loads(cookies_file.read_text(encoding="utf-8"))
+                for c in cookies:
+                    try:
+                        cookie = {
+                            "name": c.get("name"),
+                            "value": c.get("value"),
+                            "domain": c.get("domain", ".ozon.ru"),
+                            "path": c.get("path", "/"),
+                        }
+                        if c.get("expiry") is not None:
+                            cookie["expiry"] = c["expiry"]
+                        if "secure" in c:
+                            cookie["secure"] = c["secure"]
+                        if "httpOnly" in c:
+                            cookie["httpOnly"] = c["httpOnly"]
+                        driver.add_cookie(cookie)
+                    except Exception:
+                        continue
+                # Небольшая пауза и переход на нужный URL уже с куками
+                time.sleep(random.uniform(0.5, 1.0))
+                driver.get(url)
             except Exception:
                 logger.exception("Не удалось загрузить куки из %s", COOKIES_PATH)
+                driver.get(url)
+
+        _load_start_page_with_cookies()
 
         # Отладочный скриншот
         if DEBUG_SCREENSHOT:
@@ -171,6 +202,28 @@ def run_parse_listing_sync(
                 logger.info("Скриншот задачи %s сохранён в %s", task_id, screenshot_path)
             except Exception:
                 logger.exception("Не удалось сохранить скриншот для задачи %s", task_id)
+
+        # Проверка страницы «Доступ ограничен» (антибот Ozon)
+        try:
+            page_source = driver.page_source or ""
+            if any(m in page_source for m in OZON_BLOCK_PAGE_MARKERS):
+                blocked_screenshot = f"/tmp/ozon_task_{task_id}_blocked.png"
+                blocked_html = f"/tmp/ozon_task_{task_id}_blocked.html"
+                try:
+                    driver.save_screenshot(blocked_screenshot)
+                    logger.warning("Страница блокировки: скриншот сохранён в %s", blocked_screenshot)
+                except Exception:
+                    logger.exception("Не удалось сохранить скриншот блокировки для задачи %s", task_id)
+                try:
+                    Path(blocked_html).write_text(page_source, encoding="utf-8")
+                    logger.warning("Страница блокировки: HTML сохранён в %s", blocked_html)
+                except Exception:
+                    logger.exception("Не удалось сохранить HTML блокировки для задачи %s", task_id)
+                raise ValueError(
+                    "Ozon: доступ ограничен (антибот). Смените IP/прокси или используйте резидентный прокси."
+                )
+        except ValueError:
+            raise
 
         wait = WebDriverWait(driver, WAIT_TIMEOUT)
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, SELECTOR_TILE_ROOT)))
