@@ -53,21 +53,12 @@ def _get_proxy_for_selenium(proxy_url: Optional[str]) -> Optional[dict]:
     scheme = (u.scheme or "").lower()
     port = u.port or (1080 if scheme.startswith("socks") else 80)
 
-    # Собираем auth-часть, если есть логин/пароль
-    auth = ""
-    if u.username:
-        auth = u.username
-        if u.password:
-            auth += f":{u.password}"
-        auth += "@"
-
     if scheme.startswith("socks"):
         # Для SOCKS важно сохранить схему
         server = f"{scheme}://{u.hostname}:{port}"
     else:
-        # Для http/https оставляем схему и возможную auth-часть
-        scheme_prefix = f"{scheme}://" if scheme else ""
-        server = f"{scheme_prefix}{auth}{u.hostname}:{port}"
+        # Для http/https Chrome ожидает host:port без credentials в --proxy-server
+        server = f"{u.hostname}:{port}"
 
     return {"server": server, "username": u.username, "password": u.password}
 
