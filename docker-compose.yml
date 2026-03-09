@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      - CHROME_BIN=/usr/bin/chromium
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/ozon.db
+    restart: unless-stopped

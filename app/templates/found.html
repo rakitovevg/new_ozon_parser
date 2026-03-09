@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Найденные товары — Ozon Parser{% endblock %}
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-slate-900">Найденные товары</h1>
+    <p class="text-slate-500 mt-1">Все товары с ценой не выше порога задачи.</p>
+</div>
+<div class="mb-4">
+    <a href="/?tab=found" class="text-primary-600 hover:underline font-medium">← К админке</a>
+</div>
+<div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full">
+            <thead class="bg-slate-50 text-slate-500 text-left text-sm">
+                <tr>
+                    <th class="px-6 py-3 font-medium">Название</th>
+                    <th class="px-6 py-3 font-medium">Цена</th>
+                    <th class="px-6 py-3 font-medium">Дата</th>
+                    <th class="px-6 py-3 font-medium">Ссылка</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                {% for p in products %}
+                <tr class="hover:bg-slate-50/50">
+                    <td class="px-6 py-4 text-slate-800">{{ p.name[:100] }}{% if p.name|length > 100 %}…{% endif %}</td>
+                    <td class="px-6 py-4 font-medium">{{ "%.0f"|format(p.price) }} ₽</td>
+                    <td class="px-6 py-4 text-slate-500 text-sm">{{ p.created_at.strftime('%d.%m.%Y %H:%M') if p.created_at else '—' }}</td>
+                    <td class="px-6 py-4"><a href="{{ p.link }}" target="_blank" rel="noopener" class="text-primary-600 hover:underline">Купить на Ozon</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="px-6 py-12 text-center text-slate-500">Нет найденных товаров.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

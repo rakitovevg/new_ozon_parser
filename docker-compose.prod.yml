@@ -1,0 +1,15 @@
+# Для деплоя: образ собирается в CI и пушится в GHCR.
+# Запуск: IMAGE=ghcr.io/OWNER/REPO:latest docker compose -f docker-compose.prod.yml up -d
+services:
+  app:
+    image: ${IMAGE}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      - CHROME_BIN=/usr/bin/chromium
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/ozon.db
+    restart: unless-stopped
