@@ -62,7 +62,7 @@ def run_parse_listing_sync(
     found_products_callback,
 ) -> list[dict]:
     """
-    Синхронный прогон: открывает url в Chrome, ждёт .tile-root, обрабатывает до SELECTOR_MAX_CARDS карточек.
+    Синхронный прогон: открывает url в браузере, ждёт .tile-root, обрабатывает до SELECTOR_MAX_CARDS карточек.
     Для карточек с ценой <= min_price отправляет уведомление в Telegram и добавляет в found_products_callback.
     cancel_check_callback(task_id) -> True означает остановку.
     Возвращает список {"name", "price", "link"}.
@@ -72,29 +72,51 @@ def run_parse_listing_sync(
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
 
-    options = uc.ChromeOptions()
-    options.add_argument("--lang=ru-RU")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--headless=new")  # важно для Docker
-    if proxy_url:
-        proxy_dict = _get_proxy_for_selenium(proxy_url)
-        if proxy_dict and proxy_dict.get("server"):
-            # Selenium принимает --proxy-server=host:port (без схемы для HTTP)
-            options.add_argument(f"--proxy-server={proxy_dict['server']}")
-
-    # В Docker передать CHROME_BIN=/usr/bin/chromium для использования системного Chromium
-    chrome_bin = os.getenv("CHROME_BIN")
-    if chrome_bin:
-        options.binary_location = chrome_bin
-
     driver = None
-    found_products = []
+    found_products: list[dict] = []
+
+    # В Docker установлен CHROME_BIN и системный chromedriver — используем связку webdriver.Chrome + /usr/bin/chromedriver.
+    # Локально (без CHROME_BIN) остаёмся на undetected_chromedriver.
+    use_system_driver = bool(os.getenv("CHROME_BIN"))
 
     try:
-        driver = uc.Chrome(options=options)
+        if use_system_driver:
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+            from selenium.webdriver.chrome.service import Service
+
+            options = Options()
+            options.add_argument("--lang=ru-RU")
+            options.add_argument("--disable-blink-features=AutomationControlled")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--headless=new")
+
+            chrome_bin = os.getenv("CHROME_BIN")
+            if chrome_bin:
+                options.binary_location = chrome_bin
+
+            if proxy_url:
+                proxy_dict = _get_proxy_for_selenium(proxy_url)
+                if proxy_dict and proxy_dict.get("server"):
+                    options.add_argument(f"--proxy-server={proxy_dict['server']}")
+
+            service = Service("/usr/bin/chromedriver")
+            driver = webdriver.Chrome(service=service, options=options)
+        else:
+            options = uc.ChromeOptions()
+            options.add_argument("--lang=ru-RU")
+            options.add_argument("--disable-blink-features=AutomationControlled")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            if proxy_url:
+                proxy_dict = _get_proxy_for_selenium(proxy_url)
+                if proxy_dict and proxy_dict.get("server"):
+                    # Selenium принимает --proxy-server=host:port (без схемы для HTTP)
+                    options.add_argument(f"--proxy-server={proxy_dict['server']}")
+            driver = uc.Chrome(options=options, version_main=CHROME_VERSION_MAIN)
+
         driver.set_page_load_timeout(60)
         # Небольшая задержка «как человек»
         time.sleep(random.uniform(1.0, 2.5))
