@@ -44,11 +44,31 @@ def _get_proxy_for_selenium(proxy_url: Optional[str]) -> Optional[dict]:
     if not proxy_url or not proxy_url.strip():
         return None
     from urllib.parse import urlparse
-    u = urlparse(proxy_url.strip())
+    raw = proxy_url.strip()
+    u = urlparse(raw)
     if not u.hostname:
-        return {"server": proxy_url.strip()}
-    port = u.port or (1080 if (u.scheme or "").lower() == "socks5" else 80)
-    server = f"{u.hostname}:{port}"
+        # Уже host:port или что-то похожее — отдаём как есть.
+        return {"server": raw}
+
+    scheme = (u.scheme or "").lower()
+    port = u.port or (1080 if scheme.startswith("socks") else 80)
+
+    # Собираем auth-часть, если есть логин/пароль
+    auth = ""
+    if u.username:
+        auth = u.username
+        if u.password:
+            auth += f":{u.password}"
+        auth += "@"
+
+    if scheme.startswith("socks"):
+        # Для SOCKS важно сохранить схему
+        server = f"{scheme}://{u.hostname}:{port}"
+    else:
+        # Для http/https оставляем схему и возможную auth-часть
+        scheme_prefix = f"{scheme}://" if scheme else ""
+        server = f"{scheme_prefix}{auth}{u.hostname}:{port}"
+
     return {"server": server, "username": u.username, "password": u.password}
 
 
