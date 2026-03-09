@@ -10,6 +10,8 @@ import re
 import time
 import random
 import logging
+import json
+from pathlib import Path
 from urllib.parse import urljoin
 from typing import Optional
 
@@ -90,19 +92,44 @@ def run_parse_listing_sync(
     driver = None
     found_products: list[dict] = []
 
-    # Флаги из окружения
+    # Флаги и настройки из окружения
     HEADLESS = os.getenv("CHROME_HEADLESS", "true").lower() == "true"
     DEBUG_SCREENSHOT = os.getenv("DEBUG_SCREENSHOT", "false").lower() == "true"
+    USER_AGENT = os.getenv("CHROME_USER_AGENT") or ""
+    USER_DATA_DIR = os.getenv("CHROME_USER_DATA_DIR") or ""
+    COOKIES_PATH = os.getenv("OZON_COOKIES_JSON") or ""
 
     try:
         options = Options()
+        # Языки и окно как у обычного пользователя
         options.add_argument("--lang=ru-RU")
+        options.add_argument("--window-size=1920,1080")
+        options.add_experimental_option(
+            "prefs",
+            {"intl.accept_languages": "ru-RU,ru"}
+        )
+
+        # Стелс-настройки
         options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_experimental_option(
+            "excludeSwitches",
+            ["enable-automation"],
+        )
+        options.add_experimental_option("useAutomationExtension", False)
+
+        # Базовые флаги для сервера
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         # options.add_argument("--disable-gpu")  # по желанию
+
         if HEADLESS:
             options.add_argument("--headless=new")
+
+        if USER_AGENT:
+            options.add_argument(f"user-agent={USER_AGENT}")
+
+        if USER_DATA_DIR:
+            options.add_argument(f"--user-data-dir={USER_DATA_DIR}")
 
         if proxy_url:
             proxy_dict = _get_proxy_for_selenium(proxy_url)
@@ -117,7 +144,21 @@ def run_parse_listing_sync(
         time.sleep(random.uniform(1.0, 2.5))
         driver.get(url)
 
-        # Отладочные дампы (по желанию)
+        # Подгрузка сохранённых кук (если есть файл)
+        if COOKIES_PATH:
+            try:
+                cookies_file = Path(COOKIES_PATH)
+                if cookies_file.is_file():
+                    cookies = json.loads(cookies_file.read_text(encoding="utf-8"))
+                    for c in cookies:
+                        try:
+                            driver.add_cookie(c)
+                        except Exception:
+                            continue
+            except Exception:
+                logger.exception("Не удалось загрузить куки из %s", COOKIES_PATH)
+
+        # Отладочный скриншот
         if DEBUG_SCREENSHOT:
             screenshot_path = f"/tmp/ozon_task_{task_id}.png"
             try:
