@@ -90,14 +90,19 @@ def run_parse_listing_sync(
     driver = None
     found_products: list[dict] = []
 
+    # Флаги из окружения
+    HEADLESS = os.getenv("CHROME_HEADLESS", "true").lower() == "true"
+    DEBUG_SCREENSHOT = os.getenv("DEBUG_SCREENSHOT", "false").lower() == "true"
+
     try:
         options = Options()
         options.add_argument("--lang=ru-RU")
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
-        #options.add_argument("--disable-gpu")
-        #options.add_argument("--headless=new")
+        # options.add_argument("--disable-gpu")  # по желанию
+        if HEADLESS:
+            options.add_argument("--headless=new")
 
         if proxy_url:
             proxy_dict = _get_proxy_for_selenium(proxy_url)
@@ -111,6 +116,16 @@ def run_parse_listing_sync(
         # Небольшая задержка «как человек»
         time.sleep(random.uniform(1.0, 2.5))
         driver.get(url)
+
+        # Отладочные дампы (по желанию)
+        if DEBUG_SCREENSHOT:
+            screenshot_path = f"/tmp/ozon_task_{task_id}.png"
+            try:
+                driver.save_screenshot(screenshot_path)
+                logger.info("Скриншот задачи %s сохранён в %s", task_id, screenshot_path)
+            except Exception:
+                logger.exception("Не удалось сохранить скриншот для задачи %s", task_id)
+
         wait = WebDriverWait(driver, SELECTOR_WAIT_TIMEOUT)
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, SELECTOR_TILE_ROOT)))
         time.sleep(random.uniform(0.5, 1.5))
