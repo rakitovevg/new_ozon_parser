@@ -55,7 +55,6 @@ jobs:
     needs: build-and-push
     steps:
       - name: Deploy via SSH
-        if: ${{ secrets.DEPLOY_HOST != '' }}
         uses: appleboy/ssh-action@v1.0.3
         env:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
