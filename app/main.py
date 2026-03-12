@@ -138,9 +138,9 @@ async def api_set_schedule(body: ScheduleBody):
 # --- API: задачи поиска ---
 
 class SearchTaskCreate(BaseModel):
-    brand: str
-    model: str
+    url: str
     min_price: float
+    brand: Optional[str] = None  # опциональная метка бренда, вводимая пользователем
     is_active: bool = True
     run_now: bool = False
 
@@ -152,6 +152,7 @@ async def api_search_tasks_list(db: AsyncSession = Depends(get_db)):
     return [
         {
             "id": t.id,
+            "url": t.url,
             "brand": t.brand,
             "model": t.model,
             "min_price": t.min_price,
@@ -171,8 +172,9 @@ async def api_search_tasks_list(db: AsyncSession = Depends(get_db)):
 @app.post("/api/search-tasks")
 async def api_search_task_create(body: SearchTaskCreate, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     task = SearchTask(
-        brand=body.brand.strip(),
-        model=body.model.strip(),
+        brand=(body.brand or "").strip(),
+        model="",
+        url=body.url.strip(),
         min_price=float(body.min_price),
         is_active=body.is_active,
     )
@@ -290,8 +292,8 @@ async def admin_index(request: Request, db: AsyncSession = Depends(get_db)):
     await _sync_use_proxy_from_db()
     r = await db.execute(select(SearchTask).order_by(SearchTask.created_at.desc()))
     tasks = r.scalars().all()
-    r2 = await db.execute(select(Brand).order_by(Brand.name))
-    brands = r2.scalars().all()
+    # Бренды больше не нужны в интерфейсе (переход на прямые URL), но модель оставляем для обратной совместимости.
+    brands = []
     r3 = await db.execute(select(Proxy).order_by(Proxy.id))
     proxies = r3.scalars().all()
     r4 = await db.execute(select(FoundProduct).order_by(FoundProduct.created_at.desc()).limit(50))
@@ -323,10 +325,10 @@ async def admin_found(request: Request, db: AsyncSession = Depends(get_db)):
 @app.post("/admin/tasks/create", response_class=RedirectResponse)
 async def admin_task_create(request: Request, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     form = await request.form()
+    url = (form.get("url") or "").strip()
     brand = (form.get("brand") or "").strip()
-    model = (form.get("model") or "").strip()
     min_price_raw = (form.get("min_price") or "").strip()
-    if not brand or not model or not min_price_raw:
+    if not url or not min_price_raw:
         return RedirectResponse(url="/?tab=tasks&error=1", status_code=303)
     try:
         min_price = float(min_price_raw.replace(",", "."))
@@ -335,7 +337,7 @@ async def admin_task_create(request: Request, background_tasks: BackgroundTasks,
     is_active = form.get("is_active") == "on"
     run_now = form.get("run_now") == "on"
 
-    task = SearchTask(brand=brand, model=model, min_price=min_price, is_active=is_active)
+    task = SearchTask(brand=brand, model="", url=url, min_price=min_price, is_active=is_active)
     db.add(task)
     await db.flush()
     task_id = task.id

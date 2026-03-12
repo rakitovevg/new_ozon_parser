@@ -61,5 +61,14 @@ async def init_db():
     from app.models import Brand, SearchTask, FoundProduct, Setting, Proxy
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Добавляем колонку url в search_tasks, если её ещё нет (для перехода от бренда/модели к произвольному URL).
+        try:
+            res = await conn.execute(text("PRAGMA table_info(search_tasks)"))
+            cols = [row[1] for row in res]  # row[1] — имя колонки в PRAGMA table_info
+            if "url" not in cols:
+                await conn.execute(text("ALTER TABLE search_tasks ADD COLUMN url VARCHAR(1024)"))
+        except Exception:
+            # Если по какой-то причине не удалось, не блокируем запуск приложения.
+            pass
     await _seed_brands_if_empty()
     await _seed_use_proxy_setting()

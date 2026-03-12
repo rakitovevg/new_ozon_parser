@@ -14,12 +14,15 @@ class Brand(Base):
 
 
 class SearchTask(Base):
-    """Задача поиска: бренд (name из Brand), модель, мин. цена; расписание; без своего use_proxy — используется глобальный."""
+    """Задача поиска: URL листинга Ozon, мин. цена; расписание; без своего use_proxy — используется глобальный."""
     __tablename__ = "search_tasks"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    brand = Column(String(128), nullable=False)   # Brand.name
-    model = Column(String(256), nullable=False)
+    # Старые поля для обратной совместимости (брались из Brand/model)
+    brand = Column(String(128), nullable=False)   # Brand.name (исторически)
+    model = Column(String(256), nullable=False)   # Модель (исторически)
+    # Новый источник правды — полный URL листинга
+    url = Column(String(1024), nullable=True)
     min_price = Column(Float, nullable=False)     # уведомить, если цена в карточке <= min_price
     is_active = Column(Boolean, default=True)
     schedule_type = Column(String(32), nullable=True)   # 'interval' | 'daily'

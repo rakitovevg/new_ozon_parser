@@ -70,16 +70,24 @@ async def run_search_task(task_id: int, from_scheduler: bool = False) -> None:
             return
         if from_scheduler and not task.is_active:
             return
-        brand_name = task.brand.strip()
-        r2 = await db.execute(select(Brand).where(Brand.name == brand_name))
-        brand = r2.scalar_one_or_none()
-        if not brand:
-            logger.warning("run_search_task: brand '%s' not found", brand_name)
-            return
-        url = build_search_url(brand.name, brand.code, task.model)
+
+        # Новый источник URL — поле task.url. Для старых задач, где url может быть пустым,
+        # сохраняем обратную совместимость через build_search_url.
+        url = (task.url or "").strip()
         if not url:
-            logger.warning("run_search_task: empty url for task_id=%s", task_id)
-            return
+            brand_name = (task.brand or "").strip()
+            if not brand_name:
+                logger.warning("run_search_task: task_id=%s has no url and empty brand", task_id)
+                return
+            r2 = await db.execute(select(Brand).where(Brand.name == brand_name))
+            brand = r2.scalar_one_or_none()
+            if not brand:
+                logger.warning("run_search_task: brand '%s' not found", brand_name)
+                return
+            url = build_search_url(brand.name, brand.code, task.model)
+            if not url:
+                logger.warning("run_search_task: empty url (fallback) for task_id=%s", task_id)
+                return
 
     clear_cancel(task_id)
     async with async_session() as db:
