@@ -7,7 +7,10 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# При запуске из PyInstaller-бандла лаунчер задаёт OZON_PROJECT_ROOT (папка с бинарником).
+# Иначе — корень проекта по расположению этого файла.
+_base = os.getenv("OZON_PROJECT_ROOT")
+BASE_DIR = Path(_base) if _base else Path(__file__).resolve().parent.parent
 
 try:
     from dotenv import load_dotenv

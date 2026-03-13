@@ -104,6 +104,7 @@ async def run_search_task(task_id: int, from_scheduler: bool = False) -> None:
 
     loop = asyncio.get_running_loop()
     min_price_float = float(task.min_price)
+    model_filter = (task.model or "").strip()
 
     def telegram_cb(msg: str) -> None:
         _schedule_telegram(loop, msg)
@@ -113,6 +114,8 @@ async def run_search_task(task_id: int, from_scheduler: bool = False) -> None:
 
     def found_cb(rec: dict) -> None:
         _found_products_callback_sync(task_id, loop, rec)
+
+    error_for_telegram: str | None = None
 
     try:
         await asyncio.wait_for(
@@ -126,6 +129,7 @@ async def run_search_task(task_id: int, from_scheduler: bool = False) -> None:
                     task_id=task_id,
                     cancel_check_callback=cancel_cb,
                     found_products_callback=found_cb,
+                    model_filter=model_filter,
                 ),
             ),
             timeout=TASK_HARD_TIMEOUT_SECONDS,
@@ -141,11 +145,25 @@ async def run_search_task(task_id: int, from_scheduler: bool = False) -> None:
         request_cancel(task_id)
         final_status = "failed"
         run_error = f"Timeout after {TASK_HARD_TIMEOUT_SECONDS} seconds"
+        error_for_telegram = run_error
     except Exception as e:
         logger.exception("run_search_task: task_id=%s error", task_id)
         final_status = "failed"
         run_error = str(e)
+        error_for_telegram = run_error
     clear_cancel(task_id)
+
+    # Если была ошибка, отправляем краткое уведомление в Telegram (без падения при сбое отправки).
+    if error_for_telegram:
+        try:
+            msg = (
+                f"⚠️ Ошибка задачи #{task_id}\n"
+                f"Статус: {final_status}\n"
+                f"{error_for_telegram[:1500]}"
+            )
+            await send_telegram_message(msg)
+        except Exception:
+            logger.exception("run_search_task: failed to send error to Telegram for task_id=%s", task_id)
 
     async with async_session() as db:
         r = await db.execute(select(SearchTask).where(SearchTask.id == task_id))

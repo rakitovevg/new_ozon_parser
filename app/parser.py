@@ -74,6 +74,7 @@ def run_parse_listing_sync(
     task_id: int,
     cancel_check_callback,
     found_products_callback,
+    model_filter: Optional[str] = None,
 ) -> list[dict]:
     """
     Синхронный прогон: открывает url в Chrome, ждёт .tile-root, обрабатывает до SELECTOR_MAX_CARDS карточек.
@@ -129,39 +130,76 @@ def run_parse_listing_sync(
         wait = WebDriverWait(driver, SELECTOR_WAIT_TIMEOUT)
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, SELECTOR_TILE_ROOT)))
         time.sleep(random.uniform(0.5, 1.5))
-        items = driver.find_elements(By.CSS_SELECTOR, SELECTOR_TILE_ROOT)
-        items = items[:SELECTOR_MAX_CARDS]
 
-        for item in items:
+        # Подготовим слова фильтра модели (если заданы)
+        model_words: list[str] = []
+        if model_filter:
+            model_words = [w.lower() for w in re.split(r"\s+", model_filter) if w.strip()]
+
+        max_cards = SELECTOR_MAX_CARDS  # сколько карточек просмотреть (первые N)
+        max_scrolls = 10
+        scrolls = 0
+        seen_links: set[str] = set()  # уникальные карточки, которые уже учли
+        last_items_count = 0
+
+        # Скроллим и смотрим карточки, пока не просмотрим max_cards уникальных или не кончится контент
+        while len(seen_links) < max_cards and scrolls <= max_scrolls:
+            items = driver.find_elements(By.CSS_SELECTOR, SELECTOR_TILE_ROOT)
+            items_count = len(items)
+            new_cards_this_round = 0
+
+            for item in items:
+                if cancel_check_callback and cancel_check_callback(task_id):
+                    break
+                try:
+                    name_el = item.find_element(By.CSS_SELECTOR, SELECTOR_NAME_LINK)
+                    link = name_el.get_attribute("href") or ""
+                    if link and not link.startswith("http"):
+                        link = urljoin(OZON_BASE_URL, link)
+                    if not link or link in seen_links:
+                        continue
+                    seen_links.add(link)
+                    new_cards_this_round += 1
+
+                    price_el = item.find_element(By.CSS_SELECTOR, SELECTOR_PRICE)
+                    price_text = price_el.text
+                    price = int(re.sub(r"\D", "", price_text)) if price_text else 0
+                    if price <= 0 or price > min_price:
+                        continue
+
+                    name = (name_el.text or "").strip() or "—"
+                    if model_words:
+                        name_lower = name.lower()
+                        if not all(word in name_lower for word in model_words):
+                            continue
+
+                    # Подходит по цене и модели — добавляем в результат
+                    msg = (
+                        f"🔥 <b>Цена снижена!</b>\n\n"
+                        f"📦 {name}\n"
+                        f"💰 Цена: {price} ₽\n"
+                        f"🔗 <a href=\"{link}\">Купить на Ozon</a>"
+                    )
+                    if send_telegram_callback:
+                        send_telegram_callback(msg)
+                    rec = {"name": name, "price": price, "link": link}
+                    found_products.append(rec)
+                    if found_products_callback:
+                        found_products_callback(rec)
+                except Exception:
+                    continue
+
             if cancel_check_callback and cancel_check_callback(task_id):
                 break
-            try:
-                price_el = item.find_element(By.CSS_SELECTOR, SELECTOR_PRICE)
-                price_text = price_el.text
-                price = int(re.sub(r"\D", "", price_text)) if price_text else 0
-                if price <= 0:
-                    continue
-                if price > min_price:
-                    continue
-                name_el = item.find_element(By.CSS_SELECTOR, SELECTOR_NAME_LINK)
-                name = (name_el.text or "").strip() or "—"
-                link = name_el.get_attribute("href") or ""
-                if link and not link.startswith("http"):
-                    link = urljoin(OZON_BASE_URL, link)
-                msg = (
-                    f"🔥 <b>Цена снижена!</b>\n\n"
-                    f"📦 {name}\n"
-                    f"💰 Цена: {price} ₽\n"
-                    f"🔗 <a href=\"{link}\">Купить на Ozon</a>"
-                )
-                if send_telegram_callback:
-                    send_telegram_callback(msg)
-                rec = {"name": name, "price": price, "link": link}
-                found_products.append(rec)
-                if found_products_callback:
-                    found_products_callback(rec)
-            except Exception:
-                continue
+            if len(seen_links) >= max_cards:
+                break
+            if scrolls > 0 and (new_cards_this_round == 0 or items_count == last_items_count):
+                break
+
+            last_items_count = items_count
+            driver.execute_script("window.scrollBy(0, document.body.scrollHeight / 2);")
+            time.sleep(random.uniform(0.7, 1.5))
+            scrolls += 1
 
         found_products.sort(key=lambda x: x["price"])
         logger.info("run_parse_listing_sync: task_id=%s, подходящих товаров=%d", task_id, len(found_products))

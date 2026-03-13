@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import sys
 from app.config import BASE_DIR, set_use_proxy_global, get_use_proxy_global
 from app.database import get_db, init_db, async_session
 from app.models import Brand, SearchTask, FoundProduct, Setting, Proxy
@@ -61,7 +62,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="New Ozon Parser", lifespan=lifespan)
 
-templates_dir = BASE_DIR / "app" / "templates"
+# При запуске из PyInstaller-бандла шаблоны лежат рядом с main.py (внутри бандла)
+if getattr(sys, "frozen", False):
+    templates_dir = Path(__file__).resolve().parent / "templates"
+else:
+    templates_dir = BASE_DIR / "app" / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
 templates.env.globals["getattr"] = getattr
 
@@ -141,6 +146,7 @@ class SearchTaskCreate(BaseModel):
     url: str
     min_price: float
     brand: Optional[str] = None  # опциональная метка бренда, вводимая пользователем
+    model: Optional[str] = None  # опциональная метка модели, вводимая пользователем
     is_active: bool = True
     run_now: bool = False
 
@@ -173,7 +179,7 @@ async def api_search_tasks_list(db: AsyncSession = Depends(get_db)):
 async def api_search_task_create(body: SearchTaskCreate, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     task = SearchTask(
         brand=(body.brand or "").strip(),
-        model="",
+        model=(body.model or "").strip(),
         url=body.url.strip(),
         min_price=float(body.min_price),
         is_active=body.is_active,
@@ -327,6 +333,7 @@ async def admin_task_create(request: Request, background_tasks: BackgroundTasks,
     form = await request.form()
     url = (form.get("url") or "").strip()
     brand = (form.get("brand") or "").strip()
+    model = (form.get("model") or "").strip()
     min_price_raw = (form.get("min_price") or "").strip()
     if not url or not min_price_raw:
         return RedirectResponse(url="/?tab=tasks&error=1", status_code=303)
@@ -337,7 +344,7 @@ async def admin_task_create(request: Request, background_tasks: BackgroundTasks,
     is_active = form.get("is_active") == "on"
     run_now = form.get("run_now") == "on"
 
-    task = SearchTask(brand=brand, model="", url=url, min_price=min_price, is_active=is_active)
+    task = SearchTask(brand=brand, model=model, url=url, min_price=min_price, is_active=is_active)
     db.add(task)
     await db.flush()
     task_id = task.id
