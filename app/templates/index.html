@@ -105,7 +105,7 @@
         <table class="w-full">
             <thead class="bg-slate-50 text-slate-500 text-left text-sm">
                 <tr>
-                    <th class="px-6 py-3 font-medium">URL</th>
+                    <th class="px-6 py-3 font-medium">Бренд / URL</th>
                     <th class="px-6 py-3 font-medium">Мин. цена</th>
                     <th class="px-6 py-3 font-medium">Статус</th>
                     <th class="px-6 py-3 font-medium">Активна</th>
@@ -117,10 +117,15 @@
                 {% for t in tasks %}
                 <tr class="hover:bg-slate-50/50">
                     <td class="px-6 py-4">
+                        {% if t.brand %}
+                        <div class="text-sm font-medium text-slate-900">{{ t.brand }}</div>
+                        {% endif %}
                         {% if t.url %}
-                        <a href="{{ t.url }}" target="_blank" rel="noopener" class="text-primary-600 hover:underline break-all">{{ t.url }}</a>
-                        {% else %}
-                        <span class="font-medium text-slate-900">{{ t.brand }}</span> <span class="text-slate-500">/ {{ t.model }}</span>
+                        <div class="text-xs">
+                            <a href="{{ t.url }}" target="_blank" rel="noopener" class="text-primary-600 hover:underline break-all">{{ t.url }}</a>
+                        </div>
+                        {% elif t.model %}
+                        <div class="text-xs text-slate-500">{{ t.model }}</div>
                         {% endif %}
                     </td>
                     <td class="px-6 py-4 font-medium">{{ "%.0f"|format(t.min_price) }} ₽</td>
