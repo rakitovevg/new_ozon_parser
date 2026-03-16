@@ -20,9 +20,9 @@ except ImportError:
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{BASE_DIR / 'data' / 'ozon.db'}")
 
-# Telegram
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+# Telegram (для канала: ID вида -100xxxxxxxxxx или @username; бот должен быть админом канала)
+TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+TELEGRAM_CHAT_ID = (os.getenv("TELEGRAM_CHAT_ID") or "").strip()
 
 # URL поиска: итоговый = URL1 + brand.name + "-" + brand.code + URL2 + model
 SEARCH_URL1 = os.getenv("SEARCH_URL1", "")
@@ -37,6 +37,14 @@ SELECTOR_PRICE = os.getenv("SELECTOR_PRICE", ".c35_3_13-a6")
 SELECTOR_NAME_LINK = os.getenv("SELECTOR_NAME_LINK", ".ki4_24")
 SELECTOR_WAIT_TIMEOUT = int(os.getenv("SELECTOR_WAIT_TIMEOUT", "30") or "30")
 SELECTOR_MAX_CARDS = int(os.getenv("SELECTOR_MAX_CARDS", "100") or "100")
+
+# ScrapingBee (web scraping API). If API key is set, parser uses ScrapingBee instead of Selenium.
+SCRAPINGBEE_API_KEY = (os.getenv("SCRAPINGBEE_API_KEY") or "").strip()
+SCRAPINGBEE_RENDER_JS = (os.getenv("SCRAPINGBEE_RENDER_JS", "true") or "true").strip().lower() in ("1", "true", "yes", "y")
+SCRAPINGBEE_PREMIUM_PROXY = (os.getenv("SCRAPINGBEE_PREMIUM_PROXY", "true") or "true").strip().lower() in ("1", "true", "yes", "y")
+SCRAPINGBEE_COUNTRY_CODE = (os.getenv("SCRAPINGBEE_COUNTRY_CODE") or "ru").strip().lower()
+SCRAPINGBEE_BLOCK_RESOURCES = (os.getenv("SCRAPINGBEE_BLOCK_RESOURCES", "true") or "true").strip().lower() in ("1", "true", "yes", "y")
+SCRAPINGBEE_WAIT = int(os.getenv("SCRAPINGBEE_WAIT", "3000") or "3000")
 
 # Глобальный режим прокси (применяется ко всем задачам, читается на лету)
 # Хранится в БД (таблица settings), здесь кэш для быстрого доступа

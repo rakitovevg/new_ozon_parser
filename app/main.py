@@ -20,7 +20,18 @@ from app.models import Brand, SearchTask, FoundProduct, Setting, Proxy
 from app.scheduler import scheduler, refresh_scheduler, run_search_task, request_cancel
 from app.proxy_rotation import refresh_proxy_list
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
+
+# Логи в файл рядом с приложением (в той же папке, где OzonParser или корень проекта)
+_log_file = BASE_DIR / "ozon_parser.log"
+try:
+    _file_handler = logging.FileHandler(_log_file, encoding="utf-8")
+    _file_handler.setLevel(logging.INFO)
+    _file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+    logging.getLogger().addHandler(_file_handler)
+except Exception:
+    pass
 
 (BASE_DIR / "data").mkdir(exist_ok=True)
 
@@ -192,14 +203,30 @@ async def api_search_task_create(body: SearchTaskCreate, background_tasks: Backg
     return {"id": task.id, "message": "Задача создана"}
 
 
+class SearchTaskUpdate(BaseModel):
+    url: Optional[str] = None
+    min_price: Optional[float] = None
+    brand: Optional[str] = None
+    model: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
 @app.patch("/api/search-tasks/{task_id}")
-async def api_search_task_update(task_id: int, body: dict, db: AsyncSession = Depends(get_db)):
+async def api_search_task_update(task_id: int, body: SearchTaskUpdate, db: AsyncSession = Depends(get_db)):
     r = await db.execute(select(SearchTask).where(SearchTask.id == task_id))
     task = r.scalar_one_or_none()
     if not task:
         raise HTTPException(404, "Задача не найдена")
-    if "is_active" in body:
-        task.is_active = body["is_active"]
+    if body.url is not None:
+        task.url = body.url.strip()
+    if body.min_price is not None:
+        task.min_price = float(body.min_price)
+    if body.brand is not None:
+        task.brand = body.brand.strip()
+    if body.model is not None:
+        task.model = body.model.strip()
+    if body.is_active is not None:
+        task.is_active = body.is_active
     await db.commit()
     await refresh_scheduler()
     return {"ok": True}

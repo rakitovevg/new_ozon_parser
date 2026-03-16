@@ -41,3 +41,7 @@ Thumbs.db
 # Debug
 .debug/
 *.debug
+
+# Local helpers (Mac launcher, how-to file)
+Run Ozon Parser.command
+КАК_ЗАПУСТИТЬ.txt

@@ -156,6 +156,13 @@
                         <form action="/admin/tasks/{{ t.id }}/stop" method="post" class="inline"><button type="submit" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700">Остановить</button></form>
                         {% endif %}
                         {% if rs != 'running' %}
+                        <button type="button" class="edit-task-btn px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200"
+                                data-id="{{ t.id }}"
+                                data-url="{{ t.url or '' }}"
+                                data-brand="{{ t.brand or '' }}"
+                                data-model="{{ t.model or '' }}"
+                                data-min-price="{{ t.min_price }}"
+                                data-is-active="{{ '1' if t.is_active else '0' }}">Редактировать</button>
                         <form action="/admin/tasks/{{ t.id }}/run" method="post" class="inline"><button type="submit" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary-600 text-white hover:bg-primary-700">Запустить</button></form>
                         <form action="/admin/tasks/{{ t.id }}/toggle-active" method="post" class="inline"><button type="submit" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-200 text-slate-700 hover:bg-slate-300">{{ 'Выключить' if t.is_active else 'Включить' }}</button></form>
                         <form action="/admin/tasks/{{ t.id }}/delete" method="post" class="inline" onsubmit="return confirm('Удалить задачу?');"><button type="submit" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-100 text-red-700 hover:bg-red-200">Удалить</button></form>
@@ -163,13 +170,50 @@
                     </td>
                 </tr>
                 {% if rs == 'failed' and t.run_error %}
-                <tr class="bg-red-50/50"><td colspan="6" class="px-6 py-2 text-sm text-red-700">{{ t.run_error }}</td></tr>
+                <tr class="bg-red-50/50"><td colspan="7" class="px-6 py-2 text-sm text-red-700">{{ t.run_error }}</td></tr>
                 {% endif %}
                 {% else %}
-                <tr><td colspan="6" class="px-6 py-12 text-center text-slate-500">Нет задач. Создайте задачу выше.</td></tr>
+                <tr><td colspan="7" class="px-6 py-12 text-center text-slate-500">Нет задач. Создайте задачу выше.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
+    </div>
+</div>
+
+{# Модальное окно редактирования задачи #}
+<div id="editTaskModal" class="fixed inset-0 z-50 hidden" aria-hidden="true">
+    <div class="fixed inset-0 bg-slate-900/50" id="editTaskModalBackdrop"></div>
+    <div class="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white rounded-2xl shadow-xl p-6 z-10">
+        <h3 class="text-lg font-semibold text-slate-900 mb-4">Редактировать задачу</h3>
+        <form id="editTaskForm" class="space-y-4">
+            <input type="hidden" name="id" id="editTaskId">
+            <div>
+                <label for="editTaskUrl" class="block text-sm font-medium text-slate-700 mb-1">URL листинга Ozon</label>
+                <input type="url" id="editTaskUrl" name="url" required class="w-full px-4 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-primary-500">
+            </div>
+            <div>
+                <label for="editTaskBrand" class="block text-sm font-medium text-slate-700 mb-1">Бренд (метка)</label>
+                <input type="text" id="editTaskBrand" name="brand" class="w-full px-4 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-primary-500">
+            </div>
+            <div>
+                <label for="editTaskModel" class="block text-sm font-medium text-slate-700 mb-1">Модель (метка)</label>
+                <input type="text" id="editTaskModel" name="model" class="w-full px-4 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-primary-500">
+            </div>
+            <div>
+                <label for="editTaskMinPrice" class="block text-sm font-medium text-slate-700 mb-1">Минимальная цена, ₽</label>
+                <input type="number" id="editTaskMinPrice" name="min_price" min="0" step="1" required class="w-full px-4 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-primary-500">
+            </div>
+            <div>
+                <label class="inline-flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="editTaskIsActive" name="is_active" class="rounded border-slate-300 text-primary-600">
+                    <span class="text-sm text-slate-700">Активна (участвует в расписании)</span>
+                </label>
+            </div>
+            <div class="flex gap-3 pt-2">
+                <button type="submit" class="px-4 py-2 rounded-xl bg-primary-600 text-white font-medium hover:bg-primary-700">Сохранить</button>
+                <button type="button" id="editTaskModalClose" class="px-4 py-2 rounded-xl bg-slate-200 text-slate-700 font-medium hover:bg-slate-300">Отмена</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -185,6 +229,61 @@
     }
     if (sel) sel.addEventListener('change', toggle);
     toggle();
+})();
+
+(function() {
+    var modal = document.getElementById('editTaskModal');
+    var backdrop = document.getElementById('editTaskModalBackdrop');
+    var closeBtn = document.getElementById('editTaskModalClose');
+    var form = document.getElementById('editTaskForm');
+
+    function openModal(btn) {
+        document.getElementById('editTaskId').value = btn.getAttribute('data-id');
+        document.getElementById('editTaskUrl').value = btn.getAttribute('data-url') || '';
+        document.getElementById('editTaskBrand').value = btn.getAttribute('data-brand') || '';
+        document.getElementById('editTaskModel').value = btn.getAttribute('data-model') || '';
+        document.getElementById('editTaskMinPrice').value = btn.getAttribute('data-min-price') || '';
+        document.getElementById('editTaskIsActive').checked = btn.getAttribute('data-is-active') === '1';
+        modal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+        modal.classList.add('hidden');
+    }
+
+    document.querySelectorAll('.edit-task-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() { openModal(this); });
+    });
+    if (backdrop) backdrop.addEventListener('click', closeModal);
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var id = document.getElementById('editTaskId').value;
+            var payload = {
+                url: document.getElementById('editTaskUrl').value.trim(),
+                brand: document.getElementById('editTaskBrand').value.trim(),
+                model: document.getElementById('editTaskModel').value.trim(),
+                min_price: parseFloat(document.getElementById('editTaskMinPrice').value) || 0,
+                is_active: document.getElementById('editTaskIsActive').checked
+            };
+            fetch('/api/search-tasks/' + id, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(function(r) {
+                if (r.ok) {
+                    closeModal();
+                    window.location.reload();
+                } else {
+                    r.text().then(function(t) { alert('Ошибка: ' + t); });
+                }
+            }).catch(function(err) {
+                alert('Ошибка: ' + err.message);
+            });
+        });
+    }
 })();
 </script>
 {% endif %}

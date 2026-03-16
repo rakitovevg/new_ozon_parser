@@ -21,11 +21,19 @@ from app.config import (
     SELECTOR_NAME_LINK,
     SELECTOR_WAIT_TIMEOUT,
     SELECTOR_MAX_CARDS,
+    SCRAPINGBEE_API_KEY,
+    SCRAPINGBEE_RENDER_JS,
+    SCRAPINGBEE_PREMIUM_PROXY,
+    SCRAPINGBEE_COUNTRY_CODE,
+    SCRAPINGBEE_BLOCK_RESOURCES,
+    SCRAPINGBEE_WAIT,
 )
 
 logger = logging.getLogger(__name__)
 
 OZON_BASE_URL = "https://www.ozon.ru"
+
+SCRAPINGBEE_ENDPOINT = "https://app.scrapingbee.com/api/v1/"
 
 
 def build_search_url(brand_name: str, brand_code: str, model: str) -> str:
@@ -36,6 +44,86 @@ def build_search_url(brand_name: str, brand_code: str, model: str) -> str:
     code = (brand_code or "").strip()
     model_clean = (model or "").strip()
     return f"{SEARCH_URL1}{name}-{code}{SEARCH_URL2}{model_clean}"
+
+
+def _fetch_html_via_scrapingbee(url: str) -> str:
+    """
+    Fetches rendered HTML using ScrapingBee.
+    Uses settings from config.py / .env.
+    """
+    if not SCRAPINGBEE_API_KEY:
+        raise RuntimeError("SCRAPINGBEE_API_KEY is not set")
+    import httpx
+
+    params = {
+        "api_key": SCRAPINGBEE_API_KEY,
+        "url": url,
+        "render_js": "true" if SCRAPINGBEE_RENDER_JS else "false",
+        "premium_proxy": "true" if SCRAPINGBEE_PREMIUM_PROXY else "false",
+        "country_code": SCRAPINGBEE_COUNTRY_CODE or "ru",
+    }
+    if SCRAPINGBEE_BLOCK_RESOURCES:
+        params["block_resources"] = "true"
+    if SCRAPINGBEE_WAIT and SCRAPINGBEE_WAIT > 0:
+        params["wait"] = str(SCRAPINGBEE_WAIT)
+
+    # For stability: slightly higher timeouts (Ozon pages can be heavy)
+    timeout = httpx.Timeout(90.0, connect=30.0)
+    with httpx.Client(timeout=timeout, headers={"Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7"}) as client:
+        r = client.get(SCRAPINGBEE_ENDPOINT, params=params)
+        r.raise_for_status()
+        return r.text
+
+
+def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]) -> list[dict]:
+    """
+    Parses listing HTML and returns list of {"name","price","link"}.
+    Uses the same CSS selectors as Selenium-path (from config/.env).
+    """
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "lxml")
+    tiles = soup.select(SELECTOR_TILE_ROOT) if SELECTOR_TILE_ROOT else []
+    if not tiles:
+        return []
+
+    model_words: list[str] = []
+    if model_filter:
+        model_words = [w for w in model_filter.lower().split(" ") if w]
+
+    out: list[dict] = []
+    seen_links: set[str] = set()
+
+    for tile in tiles[: max(1, int(SELECTOR_MAX_CARDS or 100))]:
+        try:
+            name_el = tile.select_one(SELECTOR_NAME_LINK) if SELECTOR_NAME_LINK else None
+            if not name_el:
+                continue
+            link = (name_el.get("href") or "").strip()
+            if link and not link.startswith("http"):
+                link = urljoin(OZON_BASE_URL, link)
+            if not link or link in seen_links:
+                continue
+            seen_links.add(link)
+
+            price_el = tile.select_one(SELECTOR_PRICE) if SELECTOR_PRICE else None
+            price_text = (price_el.get_text(" ", strip=True) if price_el else "") or ""
+            price = int(re.sub(r"\D", "", price_text)) if price_text else 0
+            if price <= 0 or price > min_price:
+                continue
+
+            name = (name_el.get_text(" ", strip=True) or "").strip() or "—"
+            if model_words:
+                name_lower = name.lower()
+                if not all(word in name_lower for word in model_words):
+                    continue
+
+            out.append({"name": name, "price": price, "link": link})
+        except Exception:
+            continue
+
+    out.sort(key=lambda x: x["price"])
+    return out
 
 
 def _get_proxy_for_selenium(proxy_url: Optional[str]) -> Optional[dict]:
@@ -96,6 +184,36 @@ def run_parse_listing_sync(
     DEBUG_SCREENSHOT = os.getenv("DEBUG_SCREENSHOT", "false").lower() == "true"
 
     try:
+        # Preferred path: ScrapingBee (bypasses antibot; no local browser needed)
+        if SCRAPINGBEE_API_KEY:
+            logger.info("run_parse_listing_sync: task_id=%s using ScrapingBee", task_id)
+            html = _fetch_html_via_scrapingbee(url)
+            found_products = _parse_listing_html(html, min_price=min_price, model_filter=model_filter)
+            # Telegram notifications + callbacks (keep original behaviour)
+            model_words = [w for w in (model_filter or "").lower().split(" ") if w]
+            for rec in found_products:
+                if cancel_check_callback and cancel_check_callback(task_id):
+                    break
+                name = rec["name"]
+                price = rec["price"]
+                link = rec["link"]
+                if model_words:
+                    name_lower = name.lower()
+                    if not all(word in name_lower for word in model_words):
+                        continue
+                msg = (
+                    f"🔥 <b>Цена снижена!</b>\n\n"
+                    f"📦 {name}\n"
+                    f"💰 Цена: {price} ₽\n"
+                    f"🔗 <a href=\"{link}\">Купить на Ozon</a>"
+                )
+                if send_telegram_callback:
+                    send_telegram_callback(msg)
+                if found_products_callback:
+                    found_products_callback(rec)
+            logger.info("run_parse_listing_sync: task_id=%s, подходящих товаров=%d (ScrapingBee)", task_id, len(found_products))
+            return found_products
+
         options = Options()
         options.add_argument("--lang=ru-RU")
         options.add_argument("--disable-blink-features=AutomationControlled")
@@ -134,7 +252,7 @@ def run_parse_listing_sync(
         # Подготовим слова фильтра модели (если заданы)
         model_words: list[str] = []
         if model_filter:
-            model_words = [w.lower() for w in re.split(r"\s+", model_filter) if w.strip()]
+            model_words = model_filter.split(" ")
 
         max_cards = SELECTOR_MAX_CARDS  # сколько карточек просмотреть (первые N)
         max_scrolls = 10
@@ -189,18 +307,22 @@ def run_parse_listing_sync(
                 except Exception:
                     continue
 
+            time.sleep(random.uniform(3, 4.5))        
             if cancel_check_callback and cancel_check_callback(task_id):
+                logger.info("run_parse_listing_sync: task_id=%s cancelled", task_id)
                 break
             if len(seen_links) >= max_cards:
+                logger.info("run_parse_listing_sync: task_id=%s max_cards reached", task_id)
                 break
             if scrolls > 0 and (new_cards_this_round == 0 or items_count == last_items_count):
+                logger.info("run_parse_listing_sync: task_id=%s no new cards found", task_id)
                 break
 
             last_items_count = items_count
-            driver.execute_script("window.scrollBy(0, document.body.scrollHeight / 2);")
-            time.sleep(random.uniform(0.7, 1.5))
+            driver.execute_script("window.scrollBy(0, document.body.scrollHeight);")
             scrolls += 1
 
+        logger.info("run_parse_listing_sync: task_id=%s просмотренных товаров=%d", task_id, len(seen_links))
         found_products.sort(key=lambda x: x["price"])
         logger.info("run_parse_listing_sync: task_id=%s, подходящих товаров=%d", task_id, len(found_products))
         return found_products
