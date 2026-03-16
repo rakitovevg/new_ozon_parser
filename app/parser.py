@@ -23,7 +23,7 @@ from app.config import (
     SELECTOR_MAX_CARDS,
     SCRAPINGBEE_API_KEY,
     SCRAPINGBEE_RENDER_JS,
-    SCRAPINGBEE_PREMIUM_PROXY,
+    SCRAPINGBEE_STEALTH_PROXY,
     SCRAPINGBEE_COUNTRY_CODE,
     SCRAPINGBEE_BLOCK_RESOURCES,
     SCRAPINGBEE_WAIT,
@@ -59,9 +59,11 @@ def _fetch_html_via_scrapingbee(url: str) -> str:
         "api_key": SCRAPINGBEE_API_KEY,
         "url": url,
         "render_js": "true" if SCRAPINGBEE_RENDER_JS else "false",
-        "premium_proxy": "true" if SCRAPINGBEE_PREMIUM_PROXY else "false",
         "country_code": SCRAPINGBEE_COUNTRY_CODE or "ru",
     }
+    # Используем stealth_proxy (он у тебя работает), premium_proxy не трогаем.
+    if SCRAPINGBEE_STEALTH_PROXY:
+        params["stealth_proxy"] = "true"
     if SCRAPINGBEE_BLOCK_RESOURCES:
         params["block_resources"] = "true"
     if SCRAPINGBEE_WAIT and SCRAPINGBEE_WAIT > 0:

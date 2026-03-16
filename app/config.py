@@ -41,10 +41,10 @@ SELECTOR_MAX_CARDS = int(os.getenv("SELECTOR_MAX_CARDS", "100") or "100")
 # ScrapingBee (web scraping API). If API key is set, parser uses ScrapingBee instead of Selenium.
 SCRAPINGBEE_API_KEY = (os.getenv("SCRAPINGBEE_API_KEY") or "").strip()
 SCRAPINGBEE_RENDER_JS = (os.getenv("SCRAPINGBEE_RENDER_JS", "true") or "true").strip().lower() in ("1", "true", "yes", "y")
-SCRAPINGBEE_PREMIUM_PROXY = (os.getenv("SCRAPINGBEE_PREMIUM_PROXY", "true") or "true").strip().lower() in ("1", "true", "yes", "y")
+SCRAPINGBEE_STEALTH_PROXY = (os.getenv("SCRAPINGBEE_STEALTH_PROXY", "true") or "true").strip().lower() in ("1", "true", "yes", "y")
 SCRAPINGBEE_COUNTRY_CODE = (os.getenv("SCRAPINGBEE_COUNTRY_CODE") or "ru").strip().lower()
-SCRAPINGBEE_BLOCK_RESOURCES = (os.getenv("SCRAPINGBEE_BLOCK_RESOURCES", "true") or "true").strip().lower() in ("1", "true", "yes", "y")
-SCRAPINGBEE_WAIT = int(os.getenv("SCRAPINGBEE_WAIT", "3000") or "3000")
+SCRAPINGBEE_BLOCK_RESOURCES = (os.getenv("SCRAPINGBEE_BLOCK_RESOURCES", "false") or "false").strip().lower() in ("1", "true", "yes", "y")
+SCRAPINGBEE_WAIT = int(os.getenv("SCRAPINGBEE_WAIT", "7000") or "7000")
 
 # Глобальный режим прокси (применяется ко всем задачам, читается на лету)
 # Хранится в БД (таблица settings), здесь кэш для быстрого доступа
