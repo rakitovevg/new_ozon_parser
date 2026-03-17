@@ -48,6 +48,76 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(html, "lxml")
+
+    # Сначала собираем карту SKU -> метрики из таблицы расширения (если она есть)
+    # Поля: остаток, выручка, заказы, рейтинг, отзывы, акция
+    sku_metrics: dict[str, dict] = {}
+    try:
+        rows = soup.select("tr._tr_ysl04_1")
+        for row in rows:
+            cells = row.find_all("td")
+            if len(cells) < 6:
+                continue
+            # колонка с SKU — третья (индекс 2)
+            sku_cell = cells[2]
+            sku_span = sku_cell.find("span")
+            if not sku_span:
+                continue
+            sku_text = (sku_span.get_text(strip=True) or "").strip()
+            if not sku_text:
+                continue
+            # колонка с остатком — шестая (индекс 5)
+            stock_cell = cells[5]
+            stock_text = (stock_cell.get_text(" ", strip=True) or "").strip()
+            # выручка за 30 дней — седьмая (индекс 6)
+            revenue_cell = cells[6] if len(cells) > 6 else None
+            revenue_text = (revenue_cell.get_text(" ", strip=True) if revenue_cell else "").strip()
+            # заказов — восьмая (индекс 7)
+            orders_cell = cells[7] if len(cells) > 7 else None
+            orders_text = (orders_cell.get_text(" ", strip=True) if orders_cell else "").strip()
+            # рейтинг — девятая (индекс 8)
+            rating_cell = cells[8] if len(cells) > 8 else None
+            rating_text = (rating_cell.get_text(" ", strip=True) if rating_cell else "").strip()
+            # количество отзывов — десятая (индекс 9)
+            reviews_cell = cells[9] if len(cells) > 9 else None
+            reviews_text = (reviews_cell.get_text(" ", strip=True) if reviews_cell else "").strip()
+            # акция — одиннадцатая (индекс 10)
+            promo_cell = cells[10] if len(cells) > 10 else None
+            promo_text = (promo_cell.get_text(" ", strip=True) if promo_cell else "").strip()
+
+            def _to_int(raw: str) -> int | None:
+                raw = (raw or "").strip()
+                if not raw:
+                    return None
+                try:
+                    return int(re.sub(r"\D", "", raw))
+                except Exception:
+                    return None
+
+            stock_value = _to_int(stock_text)
+            revenue_value = _to_int(revenue_text)
+            orders_value = _to_int(orders_text)
+            reviews_value = _to_int(reviews_text)
+
+            # рейтинг может быть с точкой, поэтому отдельно
+            rating_value: float | None
+            try:
+                rating_clean = rating_text.replace(",", ".").strip()
+                rating_value = float(rating_clean) if rating_clean else None
+            except Exception:
+                rating_value = None
+
+            sku_metrics[sku_text] = {
+                "stock": stock_value,
+                "revenue_30d": revenue_value,
+                "orders_30d": orders_value,
+                "rating": rating_value,
+                "reviews": reviews_value,
+                "promo": promo_text or None,
+            }
+    except Exception:
+        sku_metrics = {}
+
     tiles = soup.select(SELECTOR_TILE_ROOT) if SELECTOR_TILE_ROOT else []
     if not tiles:
         return []
@@ -74,6 +144,18 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
                 continue
             seen_links.add(link)
 
+            # пытаемся вытащить SKU из ссылки и найти остаток в таблице расширения
+            sku = None
+            try:
+                # берём последнюю "длинную" цифробуквенную группу из URL как SKU
+                m = re.findall(r"(\d{6,})", link)
+                if m:
+                    sku = m[-1]
+            except Exception:
+                sku = None
+
+            metrics = sku_metrics.get(sku) if sku and sku_metrics else {}
+
             price_el = tile.select_one(SELECTOR_PRICE) if SELECTOR_PRICE else None
             price_text = (price_el.get_text(" ", strip=True) if price_el else "") or ""
             price = int(re.sub(r"\D", "", price_text)) if price_text else 0
@@ -87,7 +169,19 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
                 if not all(word in name_lower for word in model_words):
                     continue
 
-            out.append({"name": name, "price": price, "link": link})
+            out.append(
+                {
+                    "name": name,
+                    "price": price,
+                    "link": link,
+                    "stock": metrics.get("stock"),
+                    "revenue_30d": metrics.get("revenue_30d"),
+                    "orders_30d": metrics.get("orders_30d"),
+                    "rating": metrics.get("rating"),
+                    "reviews": metrics.get("reviews"),
+                    "promo": metrics.get("promo"),
+                },
+            )
         except Exception:
             continue
 
@@ -176,17 +270,37 @@ def _scrape_with_remote_chrome(
             break
         name = rec["name"]
         price = rec["price"]
+        stock = rec.get("stock")
+        revenue = rec.get("revenue_30d")
+        orders = rec.get("orders_30d")
+        rating = rec.get("rating")
+        reviews = rec.get("reviews")
+        promo = rec.get("promo")
         link = rec["link"]
         if model_words:
             name_lower = name.lower()
             if not all(word in name_lower for word in model_words):
                 continue
-        msg = (
-            f"🔥 <b>Цена снижена!</b>\n\n"
-            f"📦 {name}\n"
-            f"💰 Цена: {price} ₽\n"
-            f"🔗 <a href=\"{link}\">Купить на Ozon</a>"
-        )
+        lines = [
+            "🔥 <b>Цена снижена!</b>",
+            "",
+            f"📦 {name}",
+            f"💰 Цена: {price} ₽",
+        ]
+        if stock is not None:
+            lines.append(f"📦 Остаток: {stock}")
+        if revenue is not None:
+            lines.append(f"📈 Выручка за 30д: {revenue} ₽")
+        if orders is not None:
+            lines.append(f"📊 Заказов за 30д: {orders}")
+        if rating is not None:
+            lines.append(f"⭐️ Рейтинг: {rating}")
+        if reviews is not None:
+            lines.append(f"💬 Отзывов: {reviews}")
+        if promo:
+            lines.append(f"🏷 Акция: {promo}")
+        lines.append(f"🔗 <a href=\"{link}\">Купить на Ozon</a>")
+        msg = "\n".join(lines)
         # send_telegram_callback пробрасывается через внешнюю функцию,
         # поэтому здесь только found_products_callback
         if found_products_callback:
@@ -256,21 +370,41 @@ def run_parse_listing_sync(
                 model_filter=model_filter,
             )
             # Telegram уведомления — здесь, чтобы формат совпадал со старым кодом
-            model_words = model_filter.lower().split(" ")
+            model_words = model_filter.lower().split(" ") if model_filter else []
             for rec in found_products:
                 name = rec["name"]
                 price = rec["price"]
+                stock = rec.get("stock")
+                revenue = rec.get("revenue_30d")
+                orders = rec.get("orders_30d")
+                rating = rec.get("rating")
+                reviews = rec.get("reviews")
+                promo = rec.get("promo")
                 link = rec["link"]
                 if model_words:
                     name_lower = name.lower()
                     if not all(word in name_lower for word in model_words):
                         continue
-                msg = (
-                    f"🔥 <b>Цена снижена!</b>\n\n"
-                    f"📦 {name}\n"
-                    f"💰 Цена: {price} ₽\n"
-                    f"🔗 <a href=\"{link}\">Купить на Ozon</a>"
-                )
+                lines = [
+                    "🔥 <b>Цена снижена!</b>",
+                    "",
+                    f"📦 {name}",
+                    f"💰 Цена: {price} ₽",
+                ]
+                if stock is not None:
+                    lines.append(f"📦 Остаток: {stock}")
+                if revenue is not None:
+                    lines.append(f"📈 Выручка за 30д: {revenue} ₽")
+                if orders is not None:
+                    lines.append(f"📊 Заказов за 30д: {orders}")
+                if rating is not None:
+                    lines.append(f"⭐️ Рейтинг: {rating}")
+                if reviews is not None:
+                    lines.append(f"💬 Отзывов: {reviews}")
+                if promo:
+                    lines.append(f"🏷 Акция: {promo}")
+                lines.append(f"🔗 <a href=\"{link}\">Купить на Ozon</a>")
+                msg = "\n".join(lines)
                 if send_telegram_callback:
                     send_telegram_callback(msg)
             return found_products

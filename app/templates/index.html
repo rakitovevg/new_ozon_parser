@@ -292,7 +292,7 @@
 {% if tab == 'found' %}
 <div class="mb-8">
     <h1 class="text-3xl font-bold text-slate-900">Найденные товары</h1>
-    <p class="text-slate-500 mt-1">Товары, цена которых не выше порога задачи.</p>
+    <p class="text-slate-500 mt-1">Товары, цена которых не выше порога задачи, с данными по остаткам и продажам.</p>
 </div>
 <div class="mb-4">
     <a href="/admin/found" class="text-primary-600 hover:underline font-medium">Открыть полный список →</a>
@@ -303,6 +303,12 @@
             <tr>
                 <th class="px-6 py-3 font-medium">Название</th>
                 <th class="px-6 py-3 font-medium">Цена</th>
+                <th class="px-6 py-3 font-medium">Остаток</th>
+                <th class="px-6 py-3 font-medium">Выручка 30д</th>
+                <th class="px-6 py-3 font-medium">Заказы 30д</th>
+                <th class="px-6 py-3 font-medium">Рейтинг</th>
+                <th class="px-6 py-3 font-medium">Отзывы</th>
+                <th class="px-6 py-3 font-medium">Акция</th>
                 <th class="px-6 py-3 font-medium">Ссылка</th>
             </tr>
         </thead>
@@ -311,10 +317,28 @@
             <tr class="hover:bg-slate-50/50">
                 <td class="px-6 py-4 text-slate-800">{{ p.name[:80] }}{% if p.name|length > 80 %}…{% endif %}</td>
                 <td class="px-6 py-4 font-medium">{{ "%.0f"|format(p.price) }} ₽</td>
+                <td class="px-6 py-4 text-sm text-slate-800">{{ p.stock if p.stock is not none else '—' }}</td>
+                <td class="px-6 py-4 text-sm text-slate-800">
+                    {% if p.revenue_30d is not none %}
+                        {{ "%.0f"|format(p.revenue_30d) }} ₽
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td class="px-6 py-4 text-sm text-slate-800">{{ p.orders_30d if p.orders_30d is not none else '—' }}</td>
+                <td class="px-6 py-4 text-sm text-slate-800">
+                    {% if p.rating is not none %}
+                        {{ "%.1f"|format(p.rating) }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td class="px-6 py-4 text-sm text-slate-800">{{ p.reviews if p.reviews is not none else '—' }}</td>
+                <td class="px-6 py-4 text-sm text-slate-800">{{ p.promo or '—' }}</td>
                 <td class="px-6 py-4"><a href="{{ p.link }}" target="_blank" rel="noopener" class="text-primary-600 hover:underline">Открыть</a></td>
             </tr>
             {% else %}
-            <tr><td colspan="3" class="px-6 py-12 text-center text-slate-500">Пока нет найденных товаров.</td></tr>
+            <tr><td colspan="9" class="px-6 py-12 text-center text-slate-500">Пока нет найденных товаров.</td></tr>
             {% endfor %}
         </tbody>
     </table>
