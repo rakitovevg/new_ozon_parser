@@ -98,6 +98,18 @@
     </div>
 </div>
 
+<script>
+// Лёгкий авто-рефреш списка задач: раз в 15 секунд перезагружаем страницу,
+// чтобы статусы и найденные товары обновлялись без ручного F5.
+setInterval(function () {
+    if (document.visibilityState === 'visible') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', 'tasks');
+        window.location.replace(url.toString());
+    }
+}, 15000);
+</script>
+
 <div class="flex items-center justify-between mb-4">
     <h2 class="text-lg font-semibold text-slate-900">Список задач</h2>
     <form action="/admin/tasks/run-all" method="post" class="inline">
