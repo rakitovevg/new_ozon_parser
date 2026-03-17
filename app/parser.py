@@ -349,8 +349,11 @@ def _scrape_with_remote_chrome(
         # Пытаемся сразу получить XLSX через кнопку "Экспорт"
         sku_metrics_from_xlsx: dict[str, dict] | None = None
         try:
+            btn = page.locator("button:has-text('Экспорт')")
+            btn.wait_for(state="visible", timeout=SELECTOR_WAIT_TIMEOUT * 1000)
+            btn.scroll_into_view_if_needed()
             with page.expect_download() as dl_info:
-                page.click("text=Экспорт")
+                btn.click()
             download = dl_info.value
             xlsx_bytes = download.content()
             sku_metrics_from_xlsx = _build_sku_metrics_from_xlsx(xlsx_bytes)
