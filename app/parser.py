@@ -175,48 +175,75 @@ def _scrape_with_remote_chrome(
         except Exception as wait_err:
             logger.warning("remote chrome: wait_for_selector timed out: %s", wait_err)
 
-        # Поиск карточек с защитой от повторной навигации
-        for attempt in range(3):
-            try:
-                tiles = page.query_selector_all(SELECTOR_TILE_ROOT)
-                break
-            except Exception as q_err:
-                logger.warning("remote chrome: query_selector_all attempt %s failed: %s", attempt + 1, q_err)
-                tiles = []
-                page.wait_for_timeout(2000)
+        max_cards = int(SELECTOR_MAX_CARDS or 100)
+        max_scrolls = 10
+        scrolls = 0
+        seen_links: set[str] = set()
+        last_items_count = 0
 
-        for tile in tiles[: max(1, int(SELECTOR_MAX_CARDS or 100))]:
-            if cancel_check_callback and cancel_check_callback(task_id):
-                break
-            try:
-                name_el = tile.query_selector(SELECTOR_NAME_LINK)
-                price_el = tile.query_selector(SELECTOR_PRICE)
-                if not name_el or not price_el:
-                    continue
+        while len(seen_links) < max_cards and scrolls <= max_scrolls:
+            # Поиск карточек с защитой от повторной навигации
+            for attempt in range(3):
+                try:
+                    tiles = page.query_selector_all(SELECTOR_TILE_ROOT)
+                    break
+                except Exception as q_err:
+                    logger.warning("remote chrome: query_selector_all attempt %s failed: %s", attempt + 1, q_err)
+                    tiles = []
+                    page.wait_for_timeout(2000)
 
-                link = (name_el.get_attribute("href") or "").strip()
-                if link and not link.startswith("http"):
-                    link = urljoin(OZON_BASE_URL, link)
-                if not link:
-                    continue
+            items_count = len(tiles)
+            new_cards_this_round = 0
 
-                price_text = (price_el.inner_text() or "").strip()
-                price = int(re.sub(r"\D", "", price_text)) if price_text else 0
-                if price <= 0 or price > min_price:
-                    continue
-
-                name = (name_el.inner_text() or "").strip() or "—"
-                if model_words:
-                    name_lower = name.lower()
-                    if not all(word in name_lower for word in model_words):
+            for tile in tiles:
+                if cancel_check_callback and cancel_check_callback(task_id):
+                    break
+                try:
+                    name_el = tile.query_selector(SELECTOR_NAME_LINK)
+                    price_el = tile.query_selector(SELECTOR_PRICE)
+                    if not name_el or not price_el:
                         continue
 
-                rec = {"name": name, "price": price, "link": link}
-                found.append(rec)
-                if found_products_callback:
-                    found_products_callback(rec)
-            except Exception:
-                continue
+                    link = (name_el.get_attribute("href") or "").strip()
+                    if link and not link.startswith("http"):
+                        link = urljoin(OZON_BASE_URL, link)
+                    if not link or link in seen_links:
+                        continue
+                    seen_links.add(link)
+                    new_cards_this_round += 1
+
+                    price_text = (price_el.inner_text() or "").strip()
+                    price = int(re.sub(r"\D", "", price_text)) if price_text else 0
+                    if price <= 0 or price > min_price:
+                        continue
+
+                    name = (name_el.inner_text() or "").strip() or "—"
+                    if model_words:
+                        name_lower = name.lower()
+                        if not all(word in name_lower for word in model_words):
+                            continue
+
+                    rec = {"name": name, "price": price, "link": link}
+                    found.append(rec)
+                    if found_products_callback:
+                        found_products_callback(rec)
+                except Exception:
+                    continue
+
+            if cancel_check_callback and cancel_check_callback(task_id):
+                logger.info("remote chrome: task_id=%s cancelled", task_id)
+                break
+            if len(seen_links) >= max_cards:
+                logger.info("remote chrome: task_id=%s max_cards reached", task_id)
+                break
+            if scrolls > 0 and (new_cards_this_round == 0 or items_count == last_items_count):
+                logger.info("remote chrome: task_id=%s no new cards found", task_id)
+                break
+
+            last_items_count = items_count
+            page.evaluate("window.scrollBy(0, document.body.scrollHeight);")
+            page.wait_for_timeout(random.uniform(3000, 4500))
+            scrolls += 1
 
         browser.close()
 
