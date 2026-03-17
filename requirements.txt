@@ -13,3 +13,4 @@ python-dateutil==2.9.0
 apscheduler==3.10.4
 selenium>=4.15.0
 undetected-chromedriver>=3.5.0
+playwright==1.49.1

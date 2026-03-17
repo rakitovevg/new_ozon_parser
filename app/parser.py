@@ -27,6 +27,8 @@ from app.config import (
     SCRAPINGBEE_COUNTRY_CODE,
     SCRAPINGBEE_BLOCK_RESOURCES,
     SCRAPINGBEE_WAIT,
+    REMOTE_CHROME_WS,
+    USE_REMOTE_CHROME,
 )
 
 logger = logging.getLogger(__name__)
@@ -128,6 +130,75 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
     return out
 
 
+def _scrape_with_remote_chrome(
+    url: str,
+    min_price: float,
+    task_id: int,
+    cancel_check_callback,
+    found_products_callback,
+    model_filter: Optional[str],
+) -> list[dict]:
+    """
+    Использует уже запущенный Chrome (GUI VPS) через DevTools / CDP.
+    Требует REMOTE_CHROME_WS и USE_REMOTE_CHROME=true.
+    """
+    from playwright.sync_api import sync_playwright
+
+    if not REMOTE_CHROME_WS:
+        raise RuntimeError("REMOTE_CHROME_WS is not set")
+
+    found: list[dict] = []
+    model_words = [w for w in (model_filter or "").lower().split() if w]
+
+    with sync_playwright() as p:
+        browser = p.chromium.connect_over_cdp(REMOTE_CHROME_WS)
+        page = browser.new_page()
+        page.goto(url, wait_until="domcontentloaded", timeout=90_000)
+
+        # небольшая пауза, чтобы дорисовались динамические блоки
+        page.wait_for_timeout(1500)
+
+        tiles = page.query_selector_all(SELECTOR_TILE_ROOT)
+        for tile in tiles[: max(1, int(SELECTOR_MAX_CARDS or 100))]:
+            if cancel_check_callback and cancel_check_callback(task_id):
+                break
+            try:
+                name_el = tile.query_selector(SELECTOR_NAME_LINK)
+                price_el = tile.query_selector(SELECTOR_PRICE)
+                if not name_el or not price_el:
+                    continue
+
+                link = (name_el.get_attribute("href") or "").strip()
+                if link and not link.startswith("http"):
+                    link = urljoin(OZON_BASE_URL, link)
+                if not link:
+                    continue
+
+                price_text = (price_el.inner_text() or "").strip()
+                price = int(re.sub(r"\D", "", price_text)) if price_text else 0
+                if price <= 0 or price > min_price:
+                    continue
+
+                name = (name_el.inner_text() or "").strip() or "—"
+                if model_words:
+                    name_lower = name.lower()
+                    if not all(word in name_lower for word in model_words):
+                        continue
+
+                rec = {"name": name, "price": price, "link": link}
+                found.append(rec)
+                if found_products_callback:
+                    found_products_callback(rec)
+            except Exception:
+                continue
+
+        browser.close()
+
+    found.sort(key=lambda x: x["price"])
+    logger.info("run_parse_listing_sync (remote chrome): task_id=%s, подходящих товаров=%d", task_id, len(found))
+    return found
+
+
 def _get_proxy_for_selenium(proxy_url: Optional[str]) -> Optional[dict]:
     """Преобразует URL прокси в строку для --proxy-server."""
     if not proxy_url or not proxy_url.strip():
@@ -186,7 +257,20 @@ def run_parse_listing_sync(
     DEBUG_SCREENSHOT = os.getenv("DEBUG_SCREENSHOT", "false").lower() == "true"
 
     try:
-        # Preferred path: ScrapingBee (bypasses antibot; no local browser needed)
+        # 1) Remote Chrome (GUI VPS) — если включен
+        if USE_REMOTE_CHROME and REMOTE_CHROME_WS:
+            logger.info("run_parse_listing_sync: task_id=%s using remote Chrome", task_id)
+            found_products = _scrape_with_remote_chrome(
+                url=url,
+                min_price=min_price,
+                task_id=task_id,
+                cancel_check_callback=cancel_check_callback,
+                found_products_callback=found_products_callback,
+                model_filter=model_filter,
+            )
+            return found_products
+
+        # 2) ScrapingBee (облачный HTML), если задан API-ключ
         if SCRAPINGBEE_API_KEY:
             logger.info("run_parse_listing_sync: task_id=%s using ScrapingBee", task_id)
             html = _fetch_html_via_scrapingbee(url)
@@ -216,6 +300,7 @@ def run_parse_listing_sync(
             logger.info("run_parse_listing_sync: task_id=%s, подходящих товаров=%d (ScrapingBee)", task_id, len(found_products))
             return found_products
 
+        # 3) Локальный Selenium (fallback)
         options = Options()
         options.add_argument("--lang=ru-RU")
         options.add_argument("--disable-blink-features=AutomationControlled")

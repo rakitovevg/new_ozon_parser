@@ -46,6 +46,10 @@ SCRAPINGBEE_COUNTRY_CODE = (os.getenv("SCRAPINGBEE_COUNTRY_CODE") or "ru").strip
 SCRAPINGBEE_BLOCK_RESOURCES = (os.getenv("SCRAPINGBEE_BLOCK_RESOURCES", "false") or "false").strip().lower() in ("1", "true", "yes", "y")
 SCRAPINGBEE_WAIT = int(os.getenv("SCRAPINGBEE_WAIT", "7000") or "7000")
 
+# Remote Chrome (GUI VPS) via DevTools / CDP.
+REMOTE_CHROME_WS = (os.getenv("REMOTE_CHROME_WS") or "").strip()
+USE_REMOTE_CHROME = (os.getenv("USE_REMOTE_CHROME", "false") or "false").strip().lower() in ("1", "true", "yes", "y")
+
 # Глобальный режим прокси (применяется ко всем задачам, читается на лету)
 # Хранится в БД (таблица settings), здесь кэш для быстрого доступа
 _use_proxy_global: Optional[bool] = None
