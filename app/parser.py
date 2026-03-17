@@ -153,12 +153,32 @@ def _scrape_with_remote_chrome(
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(REMOTE_CHROME_WS)
         page = browser.new_page()
-        page.goto(url, wait_until="domcontentloaded", timeout=90_000)
+        # Пытаемся навигироваться 3 раза — Ozon может делать промежуточные редиректы.
+        for attempt in range(3):
+            try:
+                page.goto(url, wait_until="networkidle", timeout=120_000)
+                break
+            except Exception as nav_err:
+                logger.warning("remote chrome: nav attempt %s failed: %s", attempt + 1, nav_err)
+                if attempt == 2:
+                    browser.close()
+                    logger.error("remote chrome: navigation failed after 3 attempts")
+                    return []
+                page.wait_for_timeout(2000)
 
         # небольшая пауза, чтобы дорисовались динамические блоки
         page.wait_for_timeout(1500)
 
-        tiles = page.query_selector_all(SELECTOR_TILE_ROOT)
+        # Поиск карточек с защитой от повторной навигации
+        for attempt in range(3):
+            try:
+                tiles = page.query_selector_all(SELECTOR_TILE_ROOT)
+                break
+            except Exception as q_err:
+                logger.warning("remote chrome: query_selector_all attempt %s failed: %s", attempt + 1, q_err)
+                tiles = []
+                page.wait_for_timeout(2000)
+
         for tile in tiles[: max(1, int(SELECTOR_MAX_CARDS or 100))]:
             if cancel_check_callback and cancel_check_callback(task_id):
                 break
