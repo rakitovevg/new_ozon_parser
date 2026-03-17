@@ -275,7 +275,7 @@ def _scrape_with_remote_chrome(
         except Exception as wait_err:
             logger.warning("remote chrome: wait_for_selector timed out: %s", wait_err)
 
-        # скроллим страницу и таблицу расширения, чтобы догрузить карточки (до max_scrolls раз)
+        # скроллим страницу и таблицу расширения (template-id), чтобы догрузить все строки (до max_scrolls раз)
         max_cards = int(SELECTOR_MAX_CARDS or 100)
         max_scrolls = 10
         scrolls = 0
@@ -284,16 +284,18 @@ def _scrape_with_remote_chrome(
         while scrolls < max_scrolls:
             # общий скролл всей страницы
             page.evaluate("window.scrollBy(0, document.body.scrollHeight);")
-            # отдельный “пошаговый” скролл таблицы расширения (для виртуализации строк)
+            # отдельный “пошаговый” скролл таблицы расширения по её id="template-id"
             page.evaluate(
                 """
-                const el = document.querySelector('div._tableContainer_ztt2p_1');
-                if (el) {
+                (function() {
+                    const el = document.getElementById('template-id');
+                    if (!el) return;
                     const step = el.clientHeight || 300;
-                    for (let i = 0; i < 5; i++) {
+                    // несколько небольших шагов, как при прокрутке колёсиком мыши
+                    for (let i = 0; i < 10; i++) {
                         el.scrollTop += step;
                     }
-                }
+                })();
                 """
             )
             page.wait_for_timeout(random.uniform(3000, 4500))
