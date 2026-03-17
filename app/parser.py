@@ -160,10 +160,12 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
             price_text = (price_el.get_text(" ", strip=True) if price_el else "") or ""
             price = int(re.sub(r"\D", "", price_text)) if price_text else 0
 
+            name = name_el.nextSibling.getText()    
+
+            logger.info(f"price: {price}, name: {name}, model_words: {model_words}")
             if price <= 0 or price > min_price:
                 continue
 
-            name = name_el.nextSibling.getText()
             if model_words:
                 name_lower = name.lower()
                 if not all(word in name_lower for word in model_words):
