@@ -44,6 +44,13 @@ class FoundProduct(Base):
     name = Column(String(512), nullable=False)
     price = Column(Float, nullable=False)
     link = Column(String(1024), nullable=False)
+    # Дополнительные метрики из таблицы расширения (могут быть NULL)
+    stock = Column(Integer, nullable=True)
+    revenue_30d = Column(Float, nullable=True)
+    orders_30d = Column(Integer, nullable=True)
+    rating = Column(Float, nullable=True)
+    reviews = Column(Integer, nullable=True)
+    promo = Column(String(128), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

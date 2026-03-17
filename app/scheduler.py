@@ -50,7 +50,20 @@ def _schedule_telegram(loop, msg: str) -> None:
 
 async def _save_found_product(task_id: int, rec: dict) -> None:
     async with async_session() as db:
-        db.add(FoundProduct(task_id=task_id, name=rec["name"], price=rec["price"], link=rec["link"]))
+        db.add(
+            FoundProduct(
+                task_id=task_id,
+                name=rec["name"],
+                price=rec["price"],
+                link=rec["link"],
+                stock=rec.get("stock"),
+                revenue_30d=rec.get("revenue_30d"),
+                orders_30d=rec.get("orders_30d"),
+                rating=rec.get("rating"),
+                reviews=rec.get("reviews"),
+                promo=rec.get("promo"),
+            )
+        )
         await db.commit()
 
 

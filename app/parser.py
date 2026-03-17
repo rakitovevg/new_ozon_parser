@@ -133,9 +133,10 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
     for tile in tiles[: max(1, int(SELECTOR_MAX_CARDS or 100))]:
         try:
             count += 1
-            logger.info(f"count: {count}")
+            logger.info(f"tile #{count}")
             name_el = tile.select_one(SELECTOR_NAME_LINK) if SELECTOR_NAME_LINK else None
             if not name_el:
+                logger.info(f"tile #{count}: пропуск — не найден SELECTOR_NAME_LINK={SELECTOR_NAME_LINK!r}")
                 continue
             link = name_el.nextSibling.get("href")
             if link and not link.startswith("http"):
@@ -160,15 +161,27 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
             price_text = (price_el.get_text(" ", strip=True) if price_el else "") or ""
             price = int(re.sub(r"\D", "", price_text)) if price_text else 0
 
-            name = name_el.nextSibling.getText()    
+            name = name_el.nextSibling.getText()
 
-            logger.info(f"price: {price}, name: {name}, model_words: {model_words}")
-            if price <= 0 or price > min_price:
+            logger.info(
+                "tile #%s: price=%s, name=%s, sku=%s, model_words=%s",
+                count,
+                price,
+                name,
+                sku,
+                model_words,
+            )
+            if price <= 0:
+                logger.info(f"tile #{count}: пропуск — price <= 0 ({price})")
+                continue
+            if price > min_price:
+                logger.info(f"tile #{count}: пропуск — price {price} > min_price {min_price}")
                 continue
 
             if model_words:
                 name_lower = name.lower()
                 if not all(word in name_lower for word in model_words):
+                    logger.info(f"tile #{count}: пропуск — не прошёл фильтр по model_words")
                     continue
 
             out.append(
