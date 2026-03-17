@@ -143,17 +143,17 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
                 logger.info(f"tile #{count}: пропуск — отсутствует nextSibling для ссылки")
                 continue
             raw_href = sibling.get("href") if hasattr(sibling, "get") else None
-            if raw_href and not raw_href.startswith("http"):
+            if raw_href:
                 link = urljoin(OZON_BASE_URL, raw_href)
             else:
-                link = raw_href
-            if not link:
-                logger.info(f"tile #{count}: пропуск — не удалось получить href")
-                continue
-            if link in seen_links:
-                logger.info(f"tile #{count}: пропуск — дубликат ссылки")
-                continue
-            seen_links.add(link)
+                link = raw_href or ""
+                logger.info(f"link = {link}")
+            # если ссылки нет, всё равно учитываем товар (link = "")
+            if link:
+                if link in seen_links:
+                    logger.info(f"tile #{count}: пропуск — дубликат ссылки")
+                    continue
+                seen_links.add(link)
 
             # пытаемся вытащить SKU из ссылки и найти остаток в таблице расширения
             sku = None
@@ -282,7 +282,17 @@ def _scrape_with_remote_chrome(
         last_html_len = 0
 
         while scrolls < max_scrolls:
+            # общий скролл всей страницы
             page.evaluate("window.scrollBy(0, document.body.scrollHeight);")
+            # отдельный скролл таблицы расширения (если есть виртуализация строк)
+            page.evaluate(
+                """
+                const el = document.querySelector('div._tableContainer_ztt2p_1');
+                if (el) {
+                    el.scrollTop = el.scrollHeight;
+                }
+                """
+            )
             page.wait_for_timeout(random.uniform(3000, 4500))
             html_now = page.content()
             if len(html_now) == last_html_len:
