@@ -376,7 +376,9 @@ def _scrape_with_remote_chrome(
             with page.expect_download() as dl_info:
                 btn.click()
             download = dl_info.value
-            xlsx_bytes = download.content()
+            tmp_path = download.path()
+            with open(tmp_path, "rb") as f:
+                xlsx_bytes = f.read()
             sku_metrics_from_xlsx = _build_sku_metrics_from_xlsx(xlsx_bytes)
         except Exception as e:
             logger.warning("не удалось получить или разобрать XLSX экспорт: %s", e)
