@@ -138,10 +138,20 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
             if not name_el:
                 logger.info(f"tile #{count}: пропуск — не найден SELECTOR_NAME_LINK={SELECTOR_NAME_LINK!r}")
                 continue
-            link = name_el.nextSibling.get("href")
-            if link and not link.startswith("http"):
-                link = urljoin(OZON_BASE_URL, link)
-            if not link or link in seen_links:
+            sibling = name_el.nextSibling
+            if not sibling:
+                logger.info(f"tile #{count}: пропуск — отсутствует nextSibling для ссылки")
+                continue
+            raw_href = sibling.get("href") if hasattr(sibling, "get") else None
+            if raw_href and not raw_href.startswith("http"):
+                link = urljoin(OZON_BASE_URL, raw_href)
+            else:
+                link = raw_href
+            if not link:
+                logger.info(f"tile #{count}: пропуск — не удалось получить href")
+                continue
+            if link in seen_links:
+                logger.info(f"tile #{count}: пропуск — дубликат ссылки")
                 continue
             seen_links.add(link)
 
@@ -155,13 +165,22 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
             except Exception:
                 sku = None
 
-            metrics = sku_metrics.get(sku) if sku and sku_metrics else {}
+            # даже если по SKU нет метрик, просто берём пустой словарь
+            metrics = sku_metrics.get(sku) or {}
 
             price_el = tile.select_one(SELECTOR_PRICE) if SELECTOR_PRICE else None
             price_text = (price_el.get_text(" ", strip=True) if price_el else "") or ""
             price = int(re.sub(r"\D", "", price_text)) if price_text else 0
 
-            name = name_el.nextSibling.getText()
+            # аккуратно достаём name/link из соседнего узла, он может быть None
+            sibling = name_el.nextSibling
+            if not sibling:
+                logger.info(f"tile #{count}: пропуск — отсутствует nextSibling у name_el")
+                continue
+            if not hasattr(sibling, "getText"):
+                logger.info(f"tile #{count}: пропуск — nextSibling без getText()")
+                continue
+            name = sibling.getText()
 
             logger.info(
                 "tile #%s: price=%s, name=%s, sku=%s, model_words=%s",
