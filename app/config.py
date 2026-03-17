@@ -28,23 +28,12 @@ TELEGRAM_CHAT_ID = (os.getenv("TELEGRAM_CHAT_ID") or "").strip()
 SEARCH_URL1 = os.getenv("SEARCH_URL1", "")
 SEARCH_URL2 = os.getenv("SEARCH_URL2", "")
 
-# Chrome (undetected-chromedriver)
-CHROME_VERSION_MAIN = int(os.getenv("CHROME_VERSION_MAIN", "145") or "145")
-
 # Селекторы страницы листинга Ozon (из .env)
 SELECTOR_TILE_ROOT = os.getenv("SELECTOR_TILE_ROOT", ".tile-root")
 SELECTOR_PRICE = os.getenv("SELECTOR_PRICE", ".c35_3_13-a6")
 SELECTOR_NAME_LINK = os.getenv("SELECTOR_NAME_LINK", ".ki4_24")
 SELECTOR_WAIT_TIMEOUT = int(os.getenv("SELECTOR_WAIT_TIMEOUT", "30") or "30")
 SELECTOR_MAX_CARDS = int(os.getenv("SELECTOR_MAX_CARDS", "100") or "100")
-
-# ScrapingBee (web scraping API). If API key is set, parser uses ScrapingBee instead of Selenium.
-SCRAPINGBEE_API_KEY = (os.getenv("SCRAPINGBEE_API_KEY") or "").strip()
-SCRAPINGBEE_RENDER_JS = (os.getenv("SCRAPINGBEE_RENDER_JS", "true") or "true").strip().lower() in ("1", "true", "yes", "y")
-SCRAPINGBEE_STEALTH_PROXY = (os.getenv("SCRAPINGBEE_STEALTH_PROXY", "true") or "true").strip().lower() in ("1", "true", "yes", "y")
-SCRAPINGBEE_COUNTRY_CODE = (os.getenv("SCRAPINGBEE_COUNTRY_CODE") or "ru").strip().lower()
-SCRAPINGBEE_BLOCK_RESOURCES = (os.getenv("SCRAPINGBEE_BLOCK_RESOURCES", "false") or "false").strip().lower() in ("1", "true", "yes", "y")
-SCRAPINGBEE_WAIT = int(os.getenv("SCRAPINGBEE_WAIT", "7000") or "7000")
 
 # Remote Chrome (GUI VPS) via DevTools / CDP.
 REMOTE_CHROME_WS = (os.getenv("REMOTE_CHROME_WS") or "").strip()
