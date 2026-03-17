@@ -345,22 +345,6 @@ def _scrape_with_remote_chrome(
         else:
             context = browser.new_context()
         page = context.new_page()
-
-        # Пытаемся сразу получить XLSX через кнопку "Экспорт"
-        sku_metrics_from_xlsx: dict[str, dict] | None = None
-        try:
-            btn = page.locator("button:has-text('Экспорт')")
-            btn.wait_for(state="visible", timeout=SELECTOR_WAIT_TIMEOUT * 1000)
-            btn.scroll_into_view_if_needed()
-            with page.expect_download() as dl_info:
-                btn.click()
-            download = dl_info.value
-            xlsx_bytes = download.content()
-            sku_metrics_from_xlsx = _build_sku_metrics_from_xlsx(xlsx_bytes)
-        except Exception as e:
-            logger.warning("не удалось получить или разобрать XLSX экспорт: %s", e)
-            sku_metrics_from_xlsx = None
-
         # Пытаемся навигироваться 3 раза — Ozon может делать промежуточные редиректы.
         for attempt in range(3):
             try:
@@ -382,6 +366,21 @@ def _scrape_with_remote_chrome(
             page.wait_for_selector(SELECTOR_TILE_ROOT, timeout=SELECTOR_WAIT_TIMEOUT * 1000)
         except Exception as wait_err:
             logger.warning("remote chrome: wait_for_selector timed out: %s", wait_err)
+
+        # Пытаемся получить XLSX через кнопку "Экспорт" (к этому моменту mpstats уже инициализировался)
+        sku_metrics_from_xlsx: dict[str, dict] | None = None
+        try:
+            btn = page.locator("text=Экспорт").first
+            btn.wait_for(state="visible", timeout=SELECTOR_WAIT_TIMEOUT * 1000)
+            btn.scroll_into_view_if_needed()
+            with page.expect_download() as dl_info:
+                btn.click()
+            download = dl_info.value
+            xlsx_bytes = download.content()
+            sku_metrics_from_xlsx = _build_sku_metrics_from_xlsx(xlsx_bytes)
+        except Exception as e:
+            logger.warning("не удалось получить или разобрать XLSX экспорт: %s", e)
+            sku_metrics_from_xlsx = None
 
         # скроллим страницу и таблицу расширения (template-id), чтобы догрузить все строки (до max_scrolls раз)
         max_cards = int(SELECTOR_MAX_CARDS or 100)
