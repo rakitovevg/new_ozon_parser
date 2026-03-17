@@ -166,8 +166,14 @@ def _scrape_with_remote_chrome(
                     return []
                 page.wait_for_timeout(2000)
 
-        # небольшая пауза, чтобы дорисовались динамические блоки
-        page.wait_for_timeout(1500)
+        # большая пауза, чтобы дорисовались все динамические блоки
+        page.wait_for_timeout(12000)
+
+        # сначала просто ждём появления хотя бы одного элемента селектора
+        try:
+            page.wait_for_selector(SELECTOR_TILE_ROOT, timeout=60000)
+        except Exception as wait_err:
+            logger.warning("remote chrome: wait_for_selector timed out: %s", wait_err)
 
         # Поиск карточек с защитой от повторной навигации
         for attempt in range(3):
