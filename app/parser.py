@@ -12,6 +12,7 @@ import random
 import logging
 from urllib.parse import urljoin
 from typing import Optional
+from io import BytesIO
 
 from app.config import (
     SEARCH_URL1,
@@ -40,7 +41,96 @@ def build_search_url(brand_name: str, brand_code: str, model: str) -> str:
     return f"{SEARCH_URL1}{name}-{code}{SEARCH_URL2}{model_clean}"
 
 
-def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]) -> list[dict]:
+def _build_sku_metrics_from_xlsx(xlsx_bytes: bytes) -> dict[str, dict]:
+    """
+    Разбирает XLSX экспорт mpstats и возвращает sku -> метрики.
+    Ожидаемые столбцы (по заголовкам, на русском):
+    SKU, Остаток, Выручка за 30 дней, Заказов, Рейтинг, Количество отзывов, Акция.
+    """
+    from openpyxl import load_workbook
+
+    wb = load_workbook(BytesIO(xlsx_bytes), data_only=True)
+    ws = wb.active
+
+    header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+
+    def norm(s: str | None) -> str:
+        return (s or "").strip().lower()
+
+    col_idx: dict[str, int] = {}
+    for idx, name in enumerate(header_row):
+        n = norm(str(name))
+        if "sku" in n:
+            col_idx["sku"] = idx
+        elif "остаток" in n:
+            col_idx["stock"] = idx
+        elif "выручка" in n:
+            col_idx["revenue"] = idx
+        elif "заказов" in n:
+            col_idx["orders"] = idx
+        elif "рейтинг" in n:
+            col_idx["rating"] = idx
+        elif "количество отзывов" in n or "отзывов" in n:
+            col_idx["reviews"] = idx
+        elif "акция" in n:
+            col_idx["promo"] = idx
+
+    def to_int(val) -> int | None:
+        if val is None:
+            return None
+        s = str(val)
+        s = re.sub(r"\D", "", s)
+        if not s:
+            return None
+        try:
+            return int(s)
+        except Exception:
+            return None
+
+    def to_float(val) -> float | None:
+        if val is None:
+            return None
+        s = str(val).replace(" ", "").replace("₽", "").replace(",", ".")
+        s = re.sub(r"[^\d\.]", "", s)
+        if not s:
+            return None
+        try:
+            return float(s)
+        except Exception:
+            return None
+
+    sku_metrics: dict[str, dict] = {}
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row:
+            continue
+        sku_val = row[col_idx.get("sku", -1)] if "sku" in col_idx else None
+        if not sku_val:
+            continue
+        sku = str(sku_val).strip()
+        if not sku:
+            continue
+        stock = to_int(row[col_idx["stock"]]) if "stock" in col_idx else None
+        revenue = to_float(row[col_idx["revenue"]]) if "revenue" in col_idx else None
+        orders = to_int(row[col_idx["orders"]]) if "orders" in col_idx else None
+        rating = to_float(row[col_idx["rating"]]) if "rating" in col_idx else None
+        reviews = to_int(row[col_idx["reviews"]]) if "reviews" in col_idx else None
+        promo = row[col_idx["promo"]] if "promo" in col_idx else None
+        promo_str = str(promo).strip() if promo else None
+
+        sku_metrics[sku] = {
+            "stock": stock,
+            "revenue_30d": revenue,
+            "orders_30d": orders,
+            "rating": rating,
+            "reviews": reviews,
+            "promo": promo_str or None,
+        }
+
+    logger.info("xlsx: собрали метрики для %d SKU", len(sku_metrics))
+    return sku_metrics
+
+
+def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str], external_sku_metrics: Optional[dict[str, dict]] = None) -> list[dict]:
     """
     Parses listing HTML and returns list of {"name","price","link"}.
     Uses the same CSS selectors as Selenium-path (from config/.env).
@@ -49,74 +139,77 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
 
     soup = BeautifulSoup(html, "lxml")
 
-    # Сначала собираем карту SKU -> метрики из таблицы расширения (если она есть)
-    # Поля: остаток, выручка, заказы, рейтинг, отзывы, акция
-    sku_metrics: dict[str, dict] = {}
-    try:
-        rows = soup.select("tr._tr_ysl04_1")
-        for row in rows:
-            cells = row.find_all("td")
-            if len(cells) < 6:
-                continue
-            # колонка с SKU — третья (индекс 2)
-            sku_cell = cells[2]
-            sku_span = sku_cell.find("span")
-            if not sku_span:
-                continue
-            sku_text = (sku_span.get_text(strip=True) or "").strip()
-            if not sku_text:
-                continue
-            # колонка с остатком — шестая (индекс 5)
-            stock_cell = cells[5]
-            stock_text = (stock_cell.get_text(" ", strip=True) or "").strip()
-            # выручка за 30 дней — седьмая (индекс 6)
-            revenue_cell = cells[6] if len(cells) > 6 else None
-            revenue_text = (revenue_cell.get_text(" ", strip=True) if revenue_cell else "").strip()
-            # заказов — восьмая (индекс 7)
-            orders_cell = cells[7] if len(cells) > 7 else None
-            orders_text = (orders_cell.get_text(" ", strip=True) if orders_cell else "").strip()
-            # рейтинг — девятая (индекс 8)
-            rating_cell = cells[8] if len(cells) > 8 else None
-            rating_text = (rating_cell.get_text(" ", strip=True) if rating_cell else "").strip()
-            # количество отзывов — десятая (индекс 9)
-            reviews_cell = cells[9] if len(cells) > 9 else None
-            reviews_text = (reviews_cell.get_text(" ", strip=True) if reviews_cell else "").strip()
-            # акция — одиннадцатая (индекс 10)
-            promo_cell = cells[10] if len(cells) > 10 else None
-            promo_text = (promo_cell.get_text(" ", strip=True) if promo_cell else "").strip()
-
-            def _to_int(raw: str) -> int | None:
-                raw = (raw or "").strip()
-                if not raw:
-                    return None
-                try:
-                    return int(re.sub(r"\D", "", raw))
-                except Exception:
-                    return None
-
-            stock_value = _to_int(stock_text)
-            revenue_value = _to_int(revenue_text)
-            orders_value = _to_int(orders_text)
-            reviews_value = _to_int(reviews_text)
-
-            # рейтинг может быть с точкой, поэтому отдельно
-            rating_value: float | None
-            try:
-                rating_clean = rating_text.replace(",", ".").strip()
-                rating_value = float(rating_clean) if rating_clean else None
-            except Exception:
-                rating_value = None
-
-            sku_metrics[sku_text] = {
-                "stock": stock_value,
-                "revenue_30d": revenue_value,
-                "orders_30d": orders_value,
-                "rating": rating_value,
-                "reviews": reviews_value,
-                "promo": promo_text or None,
-            }
-    except Exception:
+    if external_sku_metrics is not None:
+        sku_metrics: dict[str, dict] = external_sku_metrics
+    else:
+        # Сначала собираем карту SKU -> метрики из таблицы расширения (если она есть)
+        # Поля: остаток, выручка, заказы, рейтинг, отзывы, акция
         sku_metrics = {}
+        try:
+            rows = soup.select("tr._tr_ysl04_1")
+            for row in rows:
+                cells = row.find_all("td")
+                if len(cells) < 6:
+                    continue
+                # колонка с SKU — третья (индекс 2)
+                sku_cell = cells[2]
+                sku_span = sku_cell.find("span")
+                if not sku_span:
+                    continue
+                sku_text = (sku_span.get_text(strip=True) or "").strip()
+                if not sku_text:
+                    continue
+                # колонка с остатком — шестая (индекс 5)
+                stock_cell = cells[5]
+                stock_text = (stock_cell.get_text(" ", strip=True) or "").strip()
+                # выручка за 30 дней — седьмая (индекс 6)
+                revenue_cell = cells[6] if len(cells) > 6 else None
+                revenue_text = (revenue_cell.get_text(" ", strip=True) if revenue_cell else "").strip()
+                # заказов — восьмая (индекс 7)
+                orders_cell = cells[7] if len(cells) > 7 else None
+                orders_text = (orders_cell.get_text(" ", strip=True) if orders_cell else "").strip()
+                # рейтинг — девятая (индекс 8)
+                rating_cell = cells[8] if len(cells) > 8 else None
+                rating_text = (rating_cell.get_text(" ", strip=True) if rating_cell else "").strip()
+                # количество отзывов — десятая (индекс 9)
+                reviews_cell = cells[9] if len(cells) > 9 else None
+                reviews_text = (reviews_cell.get_text(" ", strip=True) if reviews_cell else "").strip()
+                # акция — одиннадцатая (индекс 10)
+                promo_cell = cells[10] if len(cells) > 10 else None
+                promo_text = (promo_cell.get_text(" ", strip=True) if promo_cell else "").strip()
+
+                def _to_int(raw: str) -> int | None:
+                    raw = (raw or "").strip()
+                    if not raw:
+                        return None
+                    try:
+                        return int(re.sub(r"\D", "", raw))
+                    except Exception:
+                        return None
+
+                stock_value = _to_int(stock_text)
+                revenue_value = _to_int(revenue_text)
+                orders_value = _to_int(orders_text)
+                reviews_value = _to_int(reviews_text)
+
+                # рейтинг может быть с точкой, поэтому отдельно
+                rating_value: float | None
+                try:
+                    rating_clean = rating_text.replace(",", ".").strip()
+                    rating_value = float(rating_clean) if rating_clean else None
+                except Exception:
+                    rating_value = None
+
+                sku_metrics[sku_text] = {
+                    "stock": stock_value,
+                    "revenue_30d": revenue_value,
+                    "orders_30d": orders_value,
+                    "rating": rating_value,
+                    "reviews": reviews_value,
+                    "promo": promo_text or None,
+                }
+        except Exception:
+            sku_metrics = {}
 
     tiles = soup.select(SELECTOR_TILE_ROOT) if SELECTOR_TILE_ROOT else []
     if not tiles:
@@ -253,6 +346,18 @@ def _scrape_with_remote_chrome(
             context = browser.new_context()
         page = context.new_page()
 
+        # Пытаемся сразу получить XLSX через кнопку "Экспорт"
+        sku_metrics_from_xlsx: dict[str, dict] | None = None
+        try:
+            with page.expect_download() as dl_info:
+                page.click("text=Экспорт")
+            download = dl_info.value
+            xlsx_bytes = download.content()
+            sku_metrics_from_xlsx = _build_sku_metrics_from_xlsx(xlsx_bytes)
+        except Exception as e:
+            logger.warning("не удалось получить или разобрать XLSX экспорт: %s", e)
+            sku_metrics_from_xlsx = None
+
         # Пытаемся навигироваться 3 раза — Ozon может делать промежуточные редиректы.
         for attempt in range(3):
             try:
@@ -310,8 +415,14 @@ def _scrape_with_remote_chrome(
         html = page.content()
         page.close()
 
-    # парсим HTML тем же кодом, что и раньше (ScrapingBee + Selenium путь)
-    found = _parse_listing_html(html, min_price=min_price, model_filter=model_filter)
+    # парсим HTML тем же кодом, что и раньше (ScrapingBee + Selenium путь),
+    # но метрики (остаток/выручка/и т.д.) берём из XLSX, если он успешно распарсен
+    found = _parse_listing_html(
+        html,
+        min_price=min_price,
+        model_filter=model_filter,
+        external_sku_metrics=sku_metrics_from_xlsx,
+    )
 
     # нотификации и callback'и — те же, что были в ScrapingBee-пути
     for rec in found:
