@@ -128,7 +128,7 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
 
     out: list[dict] = []
     seen_links: set[str] = set()
-    count = 1
+    count = 0
 
     for tile in tiles[: max(1, int(SELECTOR_MAX_CARDS or 100))]:
         try:
@@ -197,7 +197,8 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
                     "promo": metrics.get("promo"),
                 },
             )
-        except Exception:
+        except Exception as e:
+            logger.exception("tile #%s: ошибка при разборе карточки: %s", count, e)
             continue
 
     out.sort(key=lambda x: x["price"])
@@ -279,7 +280,6 @@ def _scrape_with_remote_chrome(
     found = _parse_listing_html(html, min_price=min_price, model_filter=model_filter)
 
     # нотификации и callback'и — те же, что были в ScrapingBee-пути
-    model_words = model_filter.lower().split(" ")
     for rec in found:
         if cancel_check_callback and cancel_check_callback(task_id):
             break
@@ -292,10 +292,6 @@ def _scrape_with_remote_chrome(
         reviews = rec.get("reviews")
         promo = rec.get("promo")
         link = rec["link"]
-        if model_words:
-            name_lower = name.lower()
-            if not all(word in name_lower for word in model_words):
-                continue
         lines = [
             "🔥 <b>Цена снижена!</b>",
             "",
@@ -385,7 +381,6 @@ def run_parse_listing_sync(
                 model_filter=model_filter,
             )
             # Telegram уведомления — здесь, чтобы формат совпадал со старым кодом
-            model_words = model_filter.lower().split(" ") if model_filter else []
             for rec in found_products:
                 name = rec["name"]
                 price = rec["price"]
@@ -396,10 +391,6 @@ def run_parse_listing_sync(
                 reviews = rec.get("reviews")
                 promo = rec.get("promo")
                 link = rec["link"]
-                if model_words:
-                    name_lower = name.lower()
-                    if not all(word in name_lower for word in model_words):
-                        continue
                 lines = [
                     "🔥 <b>Цена снижена!</b>",
                     "",
