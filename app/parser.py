@@ -204,6 +204,20 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
                     logger.info(f"tile #{count}: пропуск — не прошёл фильтр по model_words")
                     continue
 
+            # best-effort: пытаемся найти продавца/магазин в карточке
+            shop: str | None = None
+            try:
+                seller_a = tile.select_one('a[href*="/seller/"]')
+                if seller_a:
+                    shop = seller_a.get_text(" ", strip=True) or None
+                if not shop:
+                    # иногда продавец/магазин может быть в ссылке на магазин
+                    shop_a2 = tile.select_one('a[href*="seller"]')
+                    if shop_a2:
+                        shop = shop_a2.get_text(" ", strip=True) or None
+            except Exception:
+                shop = None
+
             out.append(
                 {
                     "name": name,
@@ -215,6 +229,7 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
                     "rating": metrics.get("rating"),
                     "reviews": metrics.get("reviews"),
                     "promo": metrics.get("promo"),
+                    "shop": shop,
                 },
             )
         except Exception as e:
@@ -310,41 +325,10 @@ def _scrape_with_remote_chrome(
     # парсим HTML тем же кодом, что и раньше (ScrapingBee + Selenium путь)
     found = _parse_listing_html(html, min_price=min_price, model_filter=model_filter)
 
-    # нотификации и callback'и — те же, что были в ScrapingBee-пути
+    # callback для сохранения найденных товаров (уведомления отправляются выше по стеку)
     for rec in found:
         if cancel_check_callback and cancel_check_callback(task_id):
             break
-        name = rec["name"]
-        price = rec["price"]
-        stock = rec.get("stock")
-        revenue = rec.get("revenue_30d")
-        orders = rec.get("orders_30d")
-        rating = rec.get("rating")
-        reviews = rec.get("reviews")
-        promo = rec.get("promo")
-        link = rec["link"]
-        lines = [
-            "🔥 <b>Цена снижена!</b>",
-            "",
-            f"📦 {name}",
-            f"💰 Цена: {price} ₽",
-        ]
-        if stock is not None:
-            lines.append(f"📦 Остаток: {stock}")
-        if revenue is not None:
-            lines.append(f"📈 Выручка за 30д: {revenue} ₽")
-        if orders is not None:
-            lines.append(f"📊 Заказов за 30д: {orders}")
-        if rating is not None:
-            lines.append(f"⭐️ Рейтинг: {rating}")
-        if reviews is not None:
-            lines.append(f"💬 Отзывов: {reviews}")
-        if promo:
-            lines.append(f"🏷 Акция: {promo}")
-        lines.append(f"🔗 <a href=\"{link}\">Купить на Ozon</a>")
-        msg = "\n".join(lines)
-        # send_telegram_callback пробрасывается через внешнюю функцию,
-        # поэтому здесь только found_products_callback
         if found_products_callback:
             found_products_callback(rec)
 
@@ -416,32 +400,17 @@ def run_parse_listing_sync(
                 name = rec["name"]
                 price = rec["price"]
                 stock = rec.get("stock")
-                revenue = rec.get("revenue_30d")
-                orders = rec.get("orders_30d")
-                rating = rec.get("rating")
-                reviews = rec.get("reviews")
-                promo = rec.get("promo")
-                link = rec["link"]
-                lines = [
-                    "🔥 <b>Цена снижена!</b>",
-                    "",
-                    f"📦 {name}",
-                    f"💰 Цена: {price} ₽",
-                ]
-                if stock is not None:
-                    lines.append(f"📦 Остаток: {stock}")
-                if revenue is not None:
-                    lines.append(f"📈 Выручка за 30д: {revenue} ₽")
-                if orders is not None:
-                    lines.append(f"📊 Заказов за 30д: {orders}")
-                if rating is not None:
-                    lines.append(f"⭐️ Рейтинг: {rating}")
-                if reviews is not None:
-                    lines.append(f"💬 Отзывов: {reviews}")
-                if promo:
-                    lines.append(f"🏷 Акция: {promo}")
-                lines.append(f"🔗 <a href=\"{link}\">Купить на Ozon</a>")
-                msg = "\n".join(lines)
+                shop = rec.get("shop")
+
+                # оставляем только 4 поля: название, цена, остаток, магазин
+                msg = "\n".join(
+                    [
+                        f"📦 {name}",
+                        f"💰 Цена: {price} ₽",
+                        f"📦 Остаток: {stock if stock is not None else '—'}",
+                        f"🏪 Магазин: {shop if shop else '—'}",
+                    ]
+                )
                 if send_telegram_callback:
                     send_telegram_callback(msg)
             return found_products
