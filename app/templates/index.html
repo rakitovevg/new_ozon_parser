@@ -99,15 +99,28 @@
 </div>
 
 <script>
-// Лёгкий авто-рефреш списка задач: раз в 15 секунд перезагружаем страницу,
-// чтобы статусы и найденные товары обновлялись без ручного F5.
-setInterval(function () {
-    if (document.visibilityState === 'visible') {
-        const url = new URL(window.location.href);
-        url.searchParams.set('tab', 'tasks');
-        window.location.replace(url.toString());
-    }
-}, 15000);
+// Обновление без таймера: слушаем SSE от сервера и перезагружаем,
+// когда задача завершилась. Это не спамит запросами.
+(function () {
+    try {
+        var es = new EventSource('/admin/events');
+        es.addEventListener('task_finished', function (ev) {
+            if (document.visibilityState !== 'visible') return;
+            try {
+                var data = JSON.parse(ev.data || '{}');
+                // если мы на вкладке tasks — обновляем, чтобы увидеть новый статус
+                var url = new URL(window.location.href);
+                var tab = url.searchParams.get('tab') || 'tasks';
+                if (tab === 'tasks') {
+                    window.location.reload();
+                }
+            } catch (e) {
+                window.location.reload();
+            }
+        });
+        // если SSE отвалился — ничего страшного, можно обновить вручную
+    } catch (e) {}
+})();
 </script>
 
 <div class="flex items-center justify-between mb-4">

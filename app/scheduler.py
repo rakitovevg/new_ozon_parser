@@ -18,6 +18,7 @@ from app.models import Brand, SearchTask, FoundProduct
 from app.parser import build_search_url, run_parse_listing_sync
 from app.telegram import send_telegram_message
 from app.proxy_rotation import refresh_proxy_list, get_next_proxy_url
+from app.events import broadcaster
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +187,13 @@ async def run_search_task(task_id: int, from_scheduler: bool = False) -> None:
         t.last_run_at = datetime.utcnow()
         await db.commit()
     logger.info("run_search_task: task_id=%s finished, status=%s", task_id, final_status)
+    try:
+        await broadcaster.publish(
+            "task_finished",
+            {"task_id": task_id, "status": final_status, "ts": datetime.utcnow().isoformat()},
+        )
+    except Exception:
+        pass
 
 
 async def run_all_active_tasks() -> None:

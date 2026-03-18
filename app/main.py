@@ -8,6 +8,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Request, Depends, HTTPException, BackgroundTasks, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
+from starlette.responses import StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy import select, func, delete
@@ -19,6 +20,7 @@ from app.database import get_db, init_db, async_session
 from app.models import Brand, SearchTask, FoundProduct, Setting, Proxy
 from app.scheduler import scheduler, refresh_scheduler, run_search_task, request_cancel
 from app.proxy_rotation import refresh_proxy_list
+from app.events import broadcaster
 
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
@@ -80,6 +82,15 @@ else:
     templates_dir = BASE_DIR / "app" / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
 templates.env.globals["getattr"] = getattr
+
+
+@app.get("/admin/events")
+async def admin_events():
+    async def gen():
+        async for msg in broadcaster.subscribe():
+            yield msg
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 # --- API: бренды ---
