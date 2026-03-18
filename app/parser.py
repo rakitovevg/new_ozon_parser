@@ -22,7 +22,6 @@ from app.config import (
     SELECTOR_NAME_LINK,
     SELECTOR_WAIT_TIMEOUT,
     SELECTOR_MAX_CARDS,
-    SELLER_TAG,
     REMOTE_CHROME_WS,
     USE_REMOTE_CHROME,
 )
@@ -258,18 +257,26 @@ def _scrape_with_remote_chrome(
         raise RuntimeError("REMOTE_CHROME_WS is not set")
 
     def _extract_seller_from_product_page(p) -> str | None:
-        # Заглушка: ищем продавца строго по заданному селектору из .env (SELLER_TAG)
-        
+        # Захардкоженный селектор продавца (как ты просил — без SELLER_TAG)
+        seller_selector = 'span.b35_3_23-b7[style*="-webkit-line-clamp"]'
         try:
-            page.wait_for_selector('span.b35_3_23-b7', timeout=15000)
-            seller = page.evaluate('''() => {
+            p.wait_for_selector(seller_selector, timeout=8000)
+        except Exception:
+            logger.info("seller: селектор %r не найден на странице товара", seller_selector)
+            return None
+        try:
+            txt = p.evaluate('''() => {
             const span = document.querySelector('span.b35_3_23-b7[style*="-webkit-line-clamp"]');
             return span ? span.innerText.trim() : null;
         }''')
-
-            logger.info(f"seller ={seller} selector found")
-            return seller or None
-        except Exception:
+            
+            if txt:
+                logger.info("seller: найден продавец %r по селектору %r", txt, seller_selector)
+                return txt
+            logger.info("seller: селектор %r найден, но текст пустой", seller_selector)
+            return None
+        except Exception as e:
+            logger.info("seller: ошибка чтения текста по селектору %r: %s", seller_selector, e)
             return None
 
     with sync_playwright() as p:
@@ -344,7 +351,7 @@ def _scrape_with_remote_chrome(
             if not link:
                 continue
             try:
-                logger.info(f"extracting seller from product page: {link}")
+                logger.info("seller: открываем страницу товара для продавца: %s", link)
                 p2 = context.new_page()
                 p2.goto(link, wait_until="domcontentloaded", timeout=SELECTOR_WAIT_TIMEOUT * 4000)
                 p2.wait_for_timeout(1500)
