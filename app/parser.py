@@ -311,31 +311,40 @@ def _scrape_with_remote_chrome(
             logger.warning("remote chrome: wait_for_selector timed out: %s", wait_err)
 
         # скроллим основную страницу, чтобы mpstats дорисовал все строки в таблице
-        max_scrolls = 30
+        target_rows = int(SELECTOR_MAX_CARDS or 100)
+        max_scrolls = max(60, target_rows)  # запас по скроллам
         scrolls = 0
         last_rows_count = 0
+        no_growth = 0
 
+        # иногда mpstats догружает строки с задержкой: крутим дольше и терпеливее
         while scrolls < max_scrolls:
+            # основной скролл по выдаче
             page.evaluate("window.scrollBy(0, window.innerHeight);")
-            page.wait_for_timeout(random.uniform(1500, 2500))
+            # если давно нет роста — делаем более “сильный” скролл в низ
+            if no_growth >= 5:
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+            page.wait_for_timeout(random.uniform(2000, 3500))
+
             # считаем строки таблицы mpstats
             try:
                 rows = page.query_selector_all("tr._tr_ysl04_1")
                 rows_count = len(rows)
-                logger.info("remote chrome: mpstats rows_count=%s after scroll #%s", rows_count, scrolls + 1)
             except Exception:
                 rows_count = 0
-            # если рост строк прекратился или достигли 100+, выходим
-            if rows_count >= int(SELECTOR_MAX_CARDS or 100):
+
+            logger.info("remote chrome: mpstats rows_count=%s after scroll #%s", rows_count, scrolls + 1)
+
+            if rows_count >= target_rows:
                 break
-            if rows_count == last_rows_count:
-                # ещё один проход на случай ленивой подгрузки
-                scrolls += 1
-                if scrolls >= max_scrolls // 2:
-                    break
+
+            if rows_count <= last_rows_count:
+                no_growth += 1
             else:
                 last_rows_count = rows_count
-                scrolls += 1
+                no_growth = 0
+
+            scrolls += 1
 
         # забираем финальный HTML и закрываем только вкладку,
         # сам Chrome (GUI) оставляем работать
