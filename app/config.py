@@ -42,6 +42,9 @@ SELLER_TAG = (os.getenv("SELLER_TAG") or "").strip()
 REMOTE_CHROME_WS = (os.getenv("REMOTE_CHROME_WS") or "").strip()
 USE_REMOTE_CHROME = (os.getenv("USE_REMOTE_CHROME", "false") or "false").strip().lower() in ("1", "true", "yes", "y")
 
+# Жёсткий таймаут одной задачи парсинга (сек)
+TASK_HARD_TIMEOUT_SECONDS = int(os.getenv("TASK_HARD_TIMEOUT_SECONDS", "600") or "600")
+
 # Глобальный режим прокси (применяется ко всем задачам, читается на лету)
 # Хранится в БД (таблица settings), здесь кэш для быстрого доступа
 _use_proxy_global: Optional[bool] = None

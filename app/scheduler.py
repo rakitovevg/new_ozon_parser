@@ -12,7 +12,7 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 
-from app.config import get_use_proxy_global
+from app.config import get_use_proxy_global, TASK_HARD_TIMEOUT_SECONDS
 from app.database import async_session
 from app.models import Brand, SearchTask, FoundProduct
 from app.parser import build_search_url, run_parse_listing_sync
@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 JOB_PREFIX = "search_task_"
 JOB_GLOBAL_RUN_ALL = "global_run_all"
-TASK_HARD_TIMEOUT_SECONDS = 180  # жёсткий таймаут одной задачи парсинга
-_executor = ThreadPoolExecutor(max_workers=2)
+# Важно: один профиль/Chrome лучше не грузить параллельно.
+_executor = ThreadPoolExecutor(max_workers=1)
 
 _cancel_requested: set[int] = set()
 _cancel_lock = asyncio.Lock()

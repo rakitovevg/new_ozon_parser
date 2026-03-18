@@ -312,39 +312,53 @@ def _scrape_with_remote_chrome(
 
         # скроллим основную страницу, чтобы mpstats дорисовал все строки в таблице
         target_rows = int(SELECTOR_MAX_CARDS or 100)
-        max_scrolls = max(60, target_rows)  # запас по скроллам
+        max_scrolls = max(80, target_rows)  # запас по скроллам
         scrolls = 0
-        last_rows_count = 0
+        last_sku_count = 0
         no_growth = 0
 
-        # иногда mpstats догружает строки с задержкой: крутим дольше и терпеливее
+        def _count_unique_skus() -> int:
+            try:
+                return int(
+                    page.evaluate(
+                        """
+                        () => {
+                          const spans = Array.from(document.querySelectorAll('tr._tr_ysl04_1 td:nth-child(3) span'));
+                          const skus = spans.map(s => (s.innerText || '').trim()).filter(Boolean);
+                          return new Set(skus).size;
+                        }
+                        """
+                    )
+                )
+            except Exception:
+                return 0
+
+        # Скроллим выдачу вниз (как руками), чтобы mpstats догрузил строки.
         while scrolls < max_scrolls:
-            # основной скролл по выдаче
             page.evaluate("window.scrollBy(0, window.innerHeight);")
-            # если давно нет роста — делаем более “сильный” скролл в низ
             if no_growth >= 5:
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-            page.wait_for_timeout(random.uniform(2000, 3500))
+            page.wait_for_timeout(random.uniform(1800, 2600))
 
-            # считаем строки таблицы mpstats
-            try:
-                rows = page.query_selector_all("tr._tr_ysl04_1")
-                rows_count = len(rows)
-            except Exception:
-                rows_count = 0
+            sku_count = _count_unique_skus()
+            logger.info("remote chrome: mpstats unique_sku_count=%s after scroll #%s", sku_count, scrolls + 1)
 
-            logger.info("remote chrome: mpstats rows_count=%s after scroll #%s", rows_count, scrolls + 1)
-
-            if rows_count >= target_rows:
+            if sku_count >= target_rows:
                 break
 
-            if rows_count <= last_rows_count:
+            if sku_count <= last_sku_count:
                 no_growth += 1
             else:
-                last_rows_count = rows_count
+                last_sku_count = sku_count
                 no_growth = 0
 
             scrolls += 1
+
+        # Ключевой шаг: вернуться к таблице наверх и дать mpstats дорисовать DOM полностью
+        page.evaluate("window.scrollTo(0, 0);")
+        page.wait_for_timeout(2500)
+        sku_count_top = _count_unique_skus()
+        logger.info("remote chrome: mpstats unique_sku_count=%s after scroll back to top", sku_count_top)
 
         # забираем финальный HTML и закрываем только вкладку,
         # сам Chrome (GUI) оставляем работать
