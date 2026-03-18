@@ -135,15 +135,12 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
         try:
             count += 1
             logger.info(f"tile #{count}")
-            name_el = tile.select_one(SELECTOR_NAME_LINK) if SELECTOR_NAME_LINK else None
+            name_el = tile.select_one('span.tsBody500Medium')
             if not name_el:
                 logger.info(f"tile #{count}: пропуск — не найден SELECTOR_NAME_LINK={SELECTOR_NAME_LINK!r}")
                 continue
-            sibling = name_el.nextSibling
-            if not sibling:
-                logger.info(f"tile #{count}: пропуск — отсутствует nextSibling для ссылки")
-                continue
-            raw_href = sibling.get("href") if hasattr(sibling, "get") else None
+
+            raw_href = tile.select_one('a[href^="/product/"]')
             if raw_href:
                 link = urljoin(OZON_BASE_URL, raw_href)
             else:
@@ -169,7 +166,7 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
             # даже если по SKU нет метрик, просто берём пустой словарь
             metrics = sku_metrics.get(sku) or {}
 
-            price_el = tile.select_one(SELECTOR_PRICE) if SELECTOR_PRICE else None
+            price_el = tile.select_one('span.tsHeadline500Medium.c35_3_13-a1')
             price_text = (price_el.get_text(" ", strip=True) if price_el else "") or ""
             price = int(re.sub(r"\D", "", price_text)) if price_text else 0
 
@@ -259,6 +256,38 @@ def _scrape_with_remote_chrome(
     if not REMOTE_CHROME_WS:
         raise RuntimeError("REMOTE_CHROME_WS is not set")
 
+    def _extract_seller_from_product_page(p) -> str | None:
+        # несколько эвристик для страницы товара Ozon
+        candidates = [
+            'a[href*="/seller/"]',
+            'a[href*="seller"]',
+            'div[data-widget="webSeller"] a',
+            'div[data-widget="webSeller"] span',
+            'div[data-widget="webShopName"]',
+        ]
+        for sel in candidates:
+            try:
+                loc = p.locator(sel).first
+                if loc.count() > 0:
+                    txt = (loc.inner_text(timeout=2000) or "").strip()
+                    if txt:
+                        return txt
+            except Exception:
+                continue
+        # fallback: поиск по подписи "Продавец"
+        try:
+            loc = p.locator("text=Продавец").first
+            if loc.count() > 0:
+                # пробуем взять ближайшую ссылку рядом
+                a = loc.locator("xpath=ancestor::*[1]//a").first
+                if a.count() > 0:
+                    txt = (a.inner_text(timeout=2000) or "").strip()
+                    if txt:
+                        return txt
+        except Exception:
+            pass
+        return None
+
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(REMOTE_CHROME_WS)
         # используем уже существующий контекст браузера (с профилем и расширениями),
@@ -320,10 +349,32 @@ def _scrape_with_remote_chrome(
         # забираем финальный HTML и закрываем только вкладку,
         # сам Chrome (GUI) оставляем работать
         html = page.content()
-        page.close()
+        # парсим HTML пока ещё подключены к браузеру (потом дособерём продавцов)
+        found = _parse_listing_html(html, min_price=min_price, model_filter=model_filter)
 
-    # парсим HTML тем же кодом, что и раньше (ScrapingBee + Selenium путь)
-    found = _parse_listing_html(html, min_price=min_price, model_filter=model_filter)
+        # добираем продавца для подходящих товаров (обычно их мало)
+        for rec in found:
+            if rec.get("shop"):
+                continue
+            link = (rec.get("link") or "").strip()
+            if not link:
+                continue
+            try:
+                p2 = context.new_page()
+                p2.goto(link, wait_until="domcontentloaded", timeout=SELECTOR_WAIT_TIMEOUT * 4000)
+                p2.wait_for_timeout(1500)
+                seller = _extract_seller_from_product_page(p2)
+                if seller:
+                    rec["shop"] = seller
+                p2.close()
+            except Exception:
+                try:
+                    p2.close()
+                except Exception:
+                    pass
+                continue
+
+        page.close()
 
     # callback для сохранения найденных товаров (уведомления отправляются выше по стеку)
     for rec in found:
