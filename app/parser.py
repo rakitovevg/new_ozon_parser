@@ -142,7 +142,7 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
 
             raw_href = tile.select_one('a[href^="/product/"]')
             if raw_href:
-                link = urljoin(OZON_BASE_URL, raw_href)
+                link = urljoin(OZON_BASE_URL, raw_href['href'])
             else:
                 link = raw_href or ""
                 logger.info(f"link = {link}")
