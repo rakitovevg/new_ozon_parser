@@ -35,6 +35,9 @@ SELECTOR_NAME_LINK = os.getenv("SELECTOR_NAME_LINK", ".ki4_24")
 SELECTOR_WAIT_TIMEOUT = int(os.getenv("SELECTOR_WAIT_TIMEOUT", "30") or "30")
 SELECTOR_MAX_CARDS = int(os.getenv("SELECTOR_MAX_CARDS", "100") or "100")
 
+# Селектор продавца на странице товара Ozon (заглушка; задашь позже)
+SELLER_TAG = (os.getenv("SELLER_TAG") or "").strip()
+
 # Remote Chrome (GUI VPS) via DevTools / CDP.
 REMOTE_CHROME_WS = (os.getenv("REMOTE_CHROME_WS") or "").strip()
 USE_REMOTE_CHROME = (os.getenv("USE_REMOTE_CHROME", "false") or "false").strip().lower() in ("1", "true", "yes", "y")

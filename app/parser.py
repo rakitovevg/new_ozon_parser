@@ -22,6 +22,7 @@ from app.config import (
     SELECTOR_NAME_LINK,
     SELECTOR_WAIT_TIMEOUT,
     SELECTOR_MAX_CARDS,
+    SELLER_TAG,
     REMOTE_CHROME_WS,
     USE_REMOTE_CHROME,
 )
@@ -257,36 +258,18 @@ def _scrape_with_remote_chrome(
         raise RuntimeError("REMOTE_CHROME_WS is not set")
 
     def _extract_seller_from_product_page(p) -> str | None:
-        # несколько эвристик для страницы товара Ozon
-        candidates = [
-            'a[href*="/seller/"]',
-            'a[href*="seller"]',
-            'div[data-widget="webSeller"] a',
-            'div[data-widget="webSeller"] span',
-            'div[data-widget="webShopName"]',
-        ]
-        for sel in candidates:
-            try:
-                loc = p.locator(sel).first
-                if loc.count() > 0:
-                    txt = (loc.inner_text(timeout=2000) or "").strip()
-                    if txt:
-                        return txt
-            except Exception:
-                continue
-        # fallback: поиск по подписи "Продавец"
+        # Заглушка: ищем продавца строго по заданному селектору из .env (SELLER_TAG)
+        
         try:
-            loc = p.locator("text=Продавец").first
-            if loc.count() > 0:
-                # пробуем взять ближайшую ссылку рядом
-                a = loc.locator("xpath=ancestor::*[1]//a").first
-                if a.count() > 0:
-                    txt = (a.inner_text(timeout=2000) or "").strip()
-                    if txt:
-                        return txt
+            page.wait_for_selector('span.b35_3_23-b7', timeout=15000)
+        
+            seller = page.evaluate('''() => {
+            const span = document.querySelector('span.b35_3_23-b7[style*="-webkit-line-clamp"]');
+            return span ? span.innerText.trim() : null;
+        }''')
+            return seller or None
         except Exception:
-            pass
-        return None
+            return None
 
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(REMOTE_CHROME_WS)
@@ -352,7 +335,7 @@ def _scrape_with_remote_chrome(
         # парсим HTML пока ещё подключены к браузеру (потом дособерём продавцов)
         found = _parse_listing_html(html, min_price=min_price, model_filter=model_filter)
 
-        # добираем продавца для подходящих товаров (обычно их мало)
+        # добираем продавца только для подходящих товаров (обычно их мало)
         for rec in found:
             if rec.get("shop"):
                 continue
