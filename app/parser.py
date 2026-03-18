@@ -171,14 +171,14 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
             price = int(re.sub(r"\D", "", price_text)) if price_text else 0
 
             # аккуратно достаём name/link из соседнего узла, он может быть None
-            sibling = name_el.nextSibling
-            if not sibling:
-                logger.info(f"tile #{count}: пропуск — отсутствует nextSibling у name_el")
-                continue
-            if not hasattr(sibling, "getText"):
-                logger.info(f"tile #{count}: пропуск — nextSibling без getText()")
-                continue
-            name = sibling.getText()
+            #sibling = name_el.nextSibling
+            #if not sibling:
+            #    logger.info(f"tile #{count}: пропуск — отсутствует nextSibling у name_el")
+            #    continue
+            #if not hasattr(sibling, "getText"):
+            #    logger.info(f"tile #{count}: пропуск — nextSibling без getText()")
+            #    continue
+            name = name_el.getText()
 
             logger.info(
                 "tile #%s: price=%s, name=%s, sku=%s, model_words=%s",
