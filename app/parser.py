@@ -262,11 +262,12 @@ def _scrape_with_remote_chrome(
         
         try:
             page.wait_for_selector('span.b35_3_23-b7', timeout=15000)
-        
             seller = page.evaluate('''() => {
             const span = document.querySelector('span.b35_3_23-b7[style*="-webkit-line-clamp"]');
             return span ? span.innerText.trim() : null;
         }''')
+
+            logger.info(f"seller ={seller} selector found")
             return seller or None
         except Exception:
             return None
@@ -343,6 +344,7 @@ def _scrape_with_remote_chrome(
             if not link:
                 continue
             try:
+                logger.info(f"extracting seller from product page: {link}")
                 p2 = context.new_page()
                 p2.goto(link, wait_until="domcontentloaded", timeout=SELECTOR_WAIT_TIMEOUT * 4000)
                 p2.wait_for_timeout(1500)
