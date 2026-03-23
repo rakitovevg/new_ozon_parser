@@ -352,6 +352,24 @@ def _scrape_with_remote_chrome(
                 last_sku_count = sku_count
                 no_growth = 0
 
+            # защита от зацикливания: если долго нет роста — принудительно вниз->вверх и проверка
+            if no_growth >= 12:
+                logger.info("remote chrome: mpstats no growth (%s) — force bottom->top cycle", no_growth)
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                page.wait_for_timeout(3500)
+                page.evaluate("window.scrollTo(0, 0);")
+                page.wait_for_timeout(3000)
+                sku_after_cycle = _count_unique_skus()
+                logger.info(
+                    "remote chrome: mpstats unique_sku_count=%s after force bottom->top cycle",
+                    sku_after_cycle,
+                )
+                if sku_after_cycle <= last_sku_count:
+                    logger.info("remote chrome: mpstats still no growth — stop scrolling")
+                    break
+                last_sku_count = sku_after_cycle
+                no_growth = 0
+
             scrolls += 1
 
         # Ключевой шаг: вернуться к таблице наверх и дать mpstats дорисовать DOM полностью
