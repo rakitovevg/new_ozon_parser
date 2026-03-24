@@ -184,6 +184,38 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/
 
 Обновление происходит без простоя (compose поднимает новый контейнер и останавливает старый). Данные БД сохраняются в каталоге `data/` на сервере.
 
+### Перезапуск контейнера вручную
+
+Все команды выполняйте из каталога деплоя (`DEPLOY_PATH`):
+
+```bash
+cd $DEPLOY_PATH
+```
+
+Перезапуск всех сервисов из `docker-compose.prod.yml`:
+
+```bash
+docker compose -f docker-compose.prod.yml restart
+```
+
+Только сервис приложения (в compose он называется `app`):
+
+```bash
+docker compose -f docker-compose.prod.yml restart app
+```
+
+Полное пересоздание контейнеров (после смены `.env`, переменных окружения или когда нужен «чистый» запуск с тем же образом):
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --force-recreate
+```
+
+После правки `.env` обычно достаточно:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
 ---
 
 ## 8. Автозапуск после перезагрузки сервера
@@ -310,12 +342,7 @@ python3 scripts/healthcheck_telegram.py; echo exit:$?
 - Откройте порт 8000 в фаерволе: `sudo ufw allow 8000` (если используете ufw).  
 - Для HTTPS настройте nginx (или другой прокси) перед приложением.
 
-**Нужно перезапустить контейнер вручную:**
-
-```bash
-cd $DEPLOY_PATH
-docker compose -f docker-compose.prod.yml restart app
-```
+**Нужно перезапустить контейнер вручную** — см. подраздел **«Перезапуск контейнера вручную»** в разделе **7. Дальнейшие деплои** выше.
 
 **Посмотреть логи приложения:**
 
