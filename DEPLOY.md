@@ -307,15 +307,24 @@ server {
 | `HEALTHCHECK_REPEAT_SEC` | Повторять алерт, пока сервис лежит, каждые N секунд (`0` — только первое уведомление) |
 | `HEALTHCHECK_RECOVER_NOTIFY` | `true` — сообщить, когда сервис снова отвечает |
 
-Установка **systemd timer** (пути замените на свой `DEPLOY_PATH`):
+Установка **systemd timer** — сначала зайдите в каталог с клоном репозитория (там должны лежать `deploy/ozon-parser-healthcheck.*` и `scripts/healthcheck_telegram.py`):
 
 ```bash
+export DEPLOY_PATH=/home/ВАШ_ПОЛЬЗОВАТЕЛЬ/new_ozon_parser   # подставьте реальный путь
+cd "$DEPLOY_PATH"
+test -f deploy/ozon-parser-healthcheck.service || { echo "Файл не найден: сделайте git pull или проверьте путь"; exit 1; }
+
 sudo cp deploy/ozon-parser-healthcheck.service /etc/systemd/system/
 sudo cp deploy/ozon-parser-healthcheck.timer /etc/systemd/system/
-sudo sed -i 's|/opt/new_ozon_parser|'"$DEPLOY_PATH"'|g' /etc/systemd/system/ozon-parser-healthcheck.service
+sudo sed -i 's|/opt/new_ozon_parser|'"${DEPLOY_PATH}"'|g' /etc/systemd/system/ozon-parser-healthcheck.service
+
 sudo systemctl daemon-reload
 sudo systemctl enable --now ozon-parser-healthcheck.timer
 ```
+
+Если видите `sed: can't read ... No such file` — вы запустили `sed` **до** `cp`, или `cp` не скопировал файл (не тот каталог, нет папки `deploy/`). Порядок: **сначала** две команды `sudo cp ...`, **потом** `sed` и `daemon-reload`.
+
+Если видите `Unit file ... does not exist` — не скопированы `.service` и `.timer` в `/etc/systemd/system/` или опечатка в имени юнита.
 
 Проверка вручную:
 
