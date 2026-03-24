@@ -243,3 +243,5 @@ docker compose -f docker-compose.prod.yml restart app
 ```bash
 docker compose -f docker-compose.prod.yml logs -f app
 ```
+
+
