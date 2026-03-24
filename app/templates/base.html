@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Ozon Parser{% endblock %}</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/static/favicon.svg">
+    {% if public_base_url %}
+    <link rel="canonical" href="{{ public_base_url }}{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
+    {% endif %}
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -26,7 +31,7 @@
         <aside class="w-56 bg-slate-900 text-white flex flex-col fixed h-full">
             <div class="p-5 border-b border-slate-700">
                 <a href="/" class="text-lg font-bold flex items-center gap-2">
-                    <span class="w-8 h-8 rounded-lg bg-primary-500 flex items-center justify-center text-white font-bold">O</span>
+                    <img src="/static/favicon.svg" alt="" width="32" height="32" class="w-8 h-8 rounded-lg shrink-0" loading="lazy">
                     Ozon Parser
                 </a>
             </div>

@@ -1,0 +1,22 @@
+# Установка (подставьте свой DEPLOY_PATH и пользователя с доступом к .env):
+#   sudo cp deploy/ozon-parser-healthcheck.service /etc/systemd/system/
+#   sudo cp deploy/ozon-parser-healthcheck.timer /etc/systemd/system/
+#   sudo sed -i 's|/opt/new_ozon_parser|/ВАШ/DEPLOY_PATH|g' /etc/systemd/system/ozon-parser-healthcheck.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now ozon-parser-healthcheck.timer
+#
+# В той же директории что и проект должен лежать .env с TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID.
+
+[Unit]
+Description=Ozon Parser HTTP healthcheck (Telegram on failure)
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+WorkingDirectory=/opt/new_ozon_parser
+EnvironmentFile=-/opt/new_ozon_parser/.env
+ExecStart=/usr/bin/python3 /opt/new_ozon_parser/scripts/healthcheck_telegram.py
+
+[Install]
+WantedBy=multi-user.target

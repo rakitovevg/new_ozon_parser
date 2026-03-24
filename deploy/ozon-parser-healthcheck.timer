@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Ozon Parser healthcheck every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=1min
+Persistent=true
+Unit=ozon-parser-healthcheck.service
+
+[Install]
+WantedBy=timers.target

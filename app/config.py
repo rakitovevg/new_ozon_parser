@@ -43,6 +43,11 @@ REMOTE_CHROME_WS = (os.getenv("REMOTE_CHROME_WS") or "").strip()
 REMOTE_CHROME_HTTP = (os.getenv("REMOTE_CHROME_HTTP") or "http://127.0.0.1:9222").strip()
 USE_REMOTE_CHROME = (os.getenv("USE_REMOTE_CHROME", "false") or "false").strip().lower() in ("1", "true", "yes", "y")
 
+# Публичный URL админки (https://parser.example.com) — для ссылок; за nginx укажите TRUSTED_PROXY_HOSTS.
+PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
+# Список хостов для ProxyHeadersMiddleware через запятую, или * (по умолчанию).
+TRUSTED_PROXY_HOSTS = (os.getenv("TRUSTED_PROXY_HOSTS") or "*").strip()
+
 # Жёсткий таймаут одной задачи парсинга (сек)
 TASK_HARD_TIMEOUT_SECONDS = int(os.getenv("TASK_HARD_TIMEOUT_SECONDS", "600") or "600")
 

@@ -7,10 +7,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.responses import StreamingResponse
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from app.config import BASE_DIR
+from app.config import BASE_DIR, PUBLIC_BASE_URL, TRUSTED_PROXY_HOSTS
 from app.database import init_db
 from app.events import broadcaster
 from app.proxy_rotation import refresh_proxy_list
@@ -50,13 +52,24 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="New Ozon Parser", lifespan=lifespan)
 
+_th = TRUSTED_PROXY_HOSTS
+_trusted = None if (_th == "*" or not _th) else [h.strip() for h in _th.split(",") if h.strip()]
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_trusted or "*")
+
 # При запуске из PyInstaller-бандла шаблоны лежат рядом с main.py (внутри бандла)
 if getattr(sys, "frozen", False):
-    templates_dir = Path(__file__).resolve().parent / "templates"
+    _pkg = Path(__file__).resolve().parent
+    templates_dir = _pkg / "templates"
+    static_dir = _pkg / "static"
 else:
     templates_dir = BASE_DIR / "app" / "templates"
+    static_dir = BASE_DIR / "app" / "static"
+if static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
 templates = Jinja2Templates(directory=str(templates_dir))
 templates.env.globals["getattr"] = getattr
+templates.env.globals["public_base_url"] = PUBLIC_BASE_URL or ""
 app.state.templates = templates
 
 

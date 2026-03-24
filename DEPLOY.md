@@ -218,6 +218,85 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/
 
 ---
 
+## 9. Домен вместо IP (nginx + HTTPS)
+
+Приложение отдаёт страницы по относительным путям (`/`, `/api/...`), поэтому достаточно проксировать **ваш домен** на порт **8000**. В `.env` добавьте (без слэша в конце):
+
+```env
+PUBLIC_BASE_URL=https://parser.example.com
+TRUSTED_PROXY_HOSTS=parser.example.com
+```
+
+Пример конфига nginx (сертификат — Certbot или свой):
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name parser.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/parser.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/parser.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400;
+    }
+}
+
+server {
+    listen 80;
+    server_name parser.example.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+После правки `.env` перезапустите контейнер: `docker compose -f docker-compose.prod.yml up -d`.
+
+Иконка вкладки и логотип в шапке: `/static/favicon.svg`.
+
+---
+
+## 10. Telegram при недоступности сервиса
+
+Само приложение при падении **не может** отправить сообщение. Поэтому используется **отдельный скрипт** `scripts/healthcheck_telegram.py`: раз в несколько минут делает HTTP-запрос к админке; при ошибке шлёт Telegram (и опционально — при восстановлении).
+
+В `.env` уже должны быть `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID`. Дополнительно можно задать:
+
+| Переменная | Смысл |
+|------------|--------|
+| `HEALTHCHECK_URL` | URL проверки, по умолчанию `http://127.0.0.1:8000/` (при `network_mode: host` у контейнера это хост) |
+| `HEALTHCHECK_REPEAT_SEC` | Повторять алерт, пока сервис лежит, каждые N секунд (`0` — только первое уведомление) |
+| `HEALTHCHECK_RECOVER_NOTIFY` | `true` — сообщить, когда сервис снова отвечает |
+
+Установка **systemd timer** (пути замените на свой `DEPLOY_PATH`):
+
+```bash
+sudo cp deploy/ozon-parser-healthcheck.service /etc/systemd/system/
+sudo cp deploy/ozon-parser-healthcheck.timer /etc/systemd/system/
+sudo sed -i 's|/opt/new_ozon_parser|'"$DEPLOY_PATH"'|g' /etc/systemd/system/ozon-parser-healthcheck.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now ozon-parser-healthcheck.timer
+```
+
+Проверка вручную:
+
+```bash
+cd $DEPLOY_PATH
+set -a && source .env && set +a
+python3 scripts/healthcheck_telegram.py; echo exit:$?
+```
+
+Статус таймера: `systemctl list-timers | grep healthcheck`.
+
+---
+
 ## Возможные проблемы
 
 **Ошибка при SSH в Actions**  
