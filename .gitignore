@@ -45,3 +45,7 @@ Thumbs.db
 # Local helpers (Mac launcher, how-to file)
 Run Ozon Parser.command
 КАК_ЗАПУСТИТЬ.txt
+
+# Secrets
+ozon_cookies.json
+*.cookies.json

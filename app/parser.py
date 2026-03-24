@@ -10,6 +10,8 @@ import re
 import time
 import random
 import logging
+import html
+import httpx
 from urllib.parse import urljoin
 from typing import Optional
 from io import BytesIO
@@ -23,12 +25,42 @@ from app.config import (
     SELECTOR_WAIT_TIMEOUT,
     SELECTOR_MAX_CARDS,
     REMOTE_CHROME_WS,
+    REMOTE_CHROME_HTTP,
     USE_REMOTE_CHROME,
 )
 
 logger = logging.getLogger(__name__)
 
 OZON_BASE_URL = "https://www.ozon.ru"
+
+
+def _resolve_remote_chrome_ws() -> str:
+    """
+    Resolve current Chrome DevTools websocket URL.
+    Priority:
+    1) REMOTE_CHROME_WS if provided (can still be valid after restarts)
+    2) REMOTE_CHROME_HTTP/json/version -> webSocketDebuggerUrl
+    """
+    if REMOTE_CHROME_WS:
+        return REMOTE_CHROME_WS
+
+    base = (REMOTE_CHROME_HTTP or "").rstrip("/")
+    if not base:
+        raise RuntimeError("REMOTE_CHROME_HTTP is not set")
+
+    url = f"{base}/json/version"
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            r = client.get(url)
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        raise RuntimeError(f"failed to read Chrome DevTools endpoint {url}: {e}") from e
+
+    ws = (data.get("webSocketDebuggerUrl") or "").strip()
+    if not ws:
+        raise RuntimeError(f"webSocketDebuggerUrl is empty in {url}")
+    return ws
 
 
 def build_search_url(brand_name: str, brand_code: str, model: str) -> str:
@@ -247,14 +279,11 @@ def _scrape_with_remote_chrome(
 ) -> list[dict]:
     """
     Использует уже запущенный Chrome (GUI VPS) через DevTools / CDP.
-    Требует REMOTE_CHROME_WS и USE_REMOTE_CHROME=true.
+    Требует USE_REMOTE_CHROME=true и доступ к DevTools endpoint.
     Делает переход на страницу, скроллит, забирает HTML и парсит его
     тем же кодом, что и ScrapingBee-путь (_parse_listing_html).
     """
     from playwright.sync_api import sync_playwright
-
-    if not REMOTE_CHROME_WS:
-        raise RuntimeError("REMOTE_CHROME_WS is not set")
 
     def _extract_seller_from_product_page(p) -> str | None:
         # Захардкоженный селектор продавца (как ты просил — без SELLER_TAG)
@@ -280,7 +309,26 @@ def _scrape_with_remote_chrome(
             return None
 
     with sync_playwright() as p:
-        browser = p.chromium.connect_over_cdp(REMOTE_CHROME_WS)
+        ws_endpoint = _resolve_remote_chrome_ws()
+        try:
+            browser = p.chromium.connect_over_cdp(ws_endpoint)
+        except Exception:
+            # Stale ws endpoint after Chrome restart: refresh via /json/version.
+            if REMOTE_CHROME_WS:
+                base = (REMOTE_CHROME_HTTP or "").rstrip("/")
+                if not base:
+                    raise
+                url = f"{base}/json/version"
+                with httpx.Client(timeout=8.0) as client:
+                    r = client.get(url)
+                    r.raise_for_status()
+                    data = r.json()
+                ws_endpoint = (data.get("webSocketDebuggerUrl") or "").strip()
+                if not ws_endpoint:
+                    raise RuntimeError(f"webSocketDebuggerUrl is empty in {url}")
+                browser = p.chromium.connect_over_cdp(ws_endpoint)
+            else:
+                raise
         # используем уже существующий контекст браузера (с профилем и расширениями),
         # чтобы не создавать "чистый" новый профиль без расширений
         if browser.contexts:
@@ -485,16 +533,22 @@ def run_parse_listing_sync(
                 price = rec["price"]
                 stock = rec.get("stock")
                 shop = rec.get("shop")
+                link = (rec.get("link") or "").strip()
+                safe_name = html.escape(str(name))
+                safe_shop = html.escape(str(shop)) if shop else "—"
+                safe_link = html.escape(link, quote=True)
 
-                # оставляем только 4 поля: название, цена, остаток, магазин
-                msg = "\n".join(
-                    [
-                        f"📦 {name}",
-                        f"💰 Цена: {price} ₽",
-                        f"📦 Остаток: {stock if stock is not None else '—'}",
-                        f"🏪 Магазин: {shop if shop else '—'}",
-                    ]
-                )
+                lines = [
+                    f"📦 {safe_name}",
+                    f"💰 Цена: {price} ₽",
+                    f"📦 Остаток: {stock if stock is not None else '—'}",
+                    f"🏪 Магазин: {safe_shop}",
+                ]
+                if link:
+                    lines.append(f'🔗 <a href="{safe_link}">Открыть товар</a>')
+                else:
+                    lines.append("🔗 Ссылка: —")
+                msg = "\n".join(lines)
                 if send_telegram_callback:
                     send_telegram_callback(msg)
             return found_products

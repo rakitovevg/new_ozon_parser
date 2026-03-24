@@ -20,7 +20,7 @@ async def refresh_proxy_list() -> None:
         r = await db.execute(select(Proxy.url).order_by(Proxy.id))
         rows = r.scalars().all()
     with _lock:
-        _proxy_urls = [row[0] for row in rows if row and row[0] and str(row[0]).strip()]
+        _proxy_urls = [str(row).strip() for row in rows if row and str(row).strip()]
 
 
 def get_next_proxy_url() -> Optional[str]:

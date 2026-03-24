@@ -1,61 +1,73 @@
 # New Ozon Parser
 
-Парсер Ozon: веб-админка и бэкенд. Поиск по бренду и модели, уведомления в Telegram, если цена в карточке не выше заданного порога. Selenium (Chrome), глобальный режим прокси, общее расписание для всех задач.
+Веб-приложение на FastAPI для мониторинга выдачи Ozon: хранит задачи поиска по URL, фильтрует по цене, сохраняет найденные товары и отправляет уведомления в Telegram.
+
+## Технологии
+
+- Python 3.11
+- FastAPI + Jinja2 (API и админка)
+- SQLAlchemy async + SQLite
+- APScheduler (глобальное расписание)
+- Playwright (через remote Chrome/CDP)
 
 ## Возможности
 
-- **Задачи поиска** — бренд (из списка), модель, минимальная цена. Можно запустить задачу сразу или оставить активной для запуска по общему расписанию.
-- **Расписание для всех задач** — один раз настраивается в интерфейсе: по интервалу (сек) или ежедневно в указанное время. Подхватывается без перезапуска.
-- **Прокси** — глобальный переключатель «С прокси» / «Без прокси» и загрузка списка прокси (одна строка — один URL).
-- **Парсинг** — Chrome (Selenium), ожидание карточек на странице, разбор цен; при цене ≤ порога — запись в «Найденные товары» и сообщение в Telegram.
-- **Вкладки админки**: Задачи (создание, список, запуск/остановка, вкл/выкл, удаление), Найденные товары, Прокси.
+- Управление задачами поиска из админки (`/`): создать, включить/выключить, запустить, остановить, удалить.
+- Глобальные настройки расписания: интервал или ежедневный запуск.
+- Глобальная настройка прокси и список прокси с ротацией.
+- Хранение найденных товаров в БД.
+- Telegram-уведомления по подходящим товарам и ошибкам задач.
 
-## Установка
+## Быстрый старт
 
 ```bash
-cd new_ozon_parser
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Отредактируйте .env: TELEGRAM_*, SEARCH_URL1, SEARCH_URL2, при необходимости селекторы и CHROME_VERSION_MAIN
 ```
 
-## Запуск
+Заполните минимум в `.env`:
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+- `USE_REMOTE_CHROME`
+- `REMOTE_CHROME_HTTP` (если `USE_REMOTE_CHROME=true`, обычно `http://127.0.0.1:9222`)
+
+`REMOTE_CHROME_WS` можно не задавать: приложение автоматически получает актуальный
+`webSocketDebuggerUrl` из `REMOTE_CHROME_HTTP/json/version`. Это переживает рестарты Chrome.
+
+Запуск:
 
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Откройте в браузере: **http://localhost:8000**
+Админка: [http://localhost:8000](http://localhost:8000)
 
-## .env
-
-- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` — уведомления в Telegram.
-- `SEARCH_URL1`, `SEARCH_URL2` — итоговый URL поиска: `SEARCH_URL1 + brand.name + "-" + brand.code + SEARCH_URL2 + model`.
-- `CHROME_VERSION_MAIN` — мажорная версия Chrome (по умолчанию 145) для undetected-chromedriver.
-- `SELECTOR_TILE_ROOT`, `SELECTOR_PRICE`, `SELECTOR_NAME_LINK`, `SELECTOR_WAIT_TIMEOUT`, `SELECTOR_MAX_CARDS` — селекторы и лимит карточек.
-
-## Бренды
-
-Таблица `brands` заполняется при первом запуске из встроенного списка. При необходимости добавьте записи (name, code) в БД или скриптом.
-
-## Деплой
-
-Инструкция по деплою на сервер (Docker, GitHub Actions) — в файле **[DEPLOY.md](DEPLOY.md)**.
-
-Локальный запуск через Docker:
+## Docker
 
 ```bash
 docker compose up -d
-# приложение на http://localhost:8000
 ```
+
+Для продакшн-сценария и CI/CD см. `DEPLOY.md`.
+
+## Важное по безопасности
+
+- Не храните реальные секреты и куки в репозитории.
+- `.env` должен быть только локальным/серверным файлом.
+- Если секреты уже утекли в git-историю, замените токены и cookies.
 
 ## API (кратко)
 
-- `GET/POST /api/settings/use-proxy` — глобальный режим прокси.
-- `GET/POST /api/settings/schedule` — глобальное расписание для всех задач.
-- `GET /api/brands` — список брендов.
-- `GET/POST /api/search-tasks`, `PATCH/DELETE /api/search-tasks/{id}`, `POST .../run`, `.../stop`, `POST /api/search-tasks/run-all`.
-- `GET /api/found-products` — найденные товары.
-- `GET/POST/DELETE /api/proxies` — список прокси.
+- `GET/POST /api/settings/use-proxy`
+- `GET/POST /api/settings/schedule`
+- `GET /api/brands`
+- `GET/POST /api/search-tasks`
+- `PATCH/DELETE /api/search-tasks/{id}`
+- `POST /api/search-tasks/{id}/run`
+- `POST /api/search-tasks/{id}/stop`
+- `POST /api/search-tasks/run-all`
+- `GET /api/found-products`
+- `GET/POST/DELETE /api/proxies`

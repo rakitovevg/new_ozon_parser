@@ -1,0 +1,25 @@
+# Установка на сервер (подставьте свой путь вместо /opt/new_ozon_parser):
+#   sudo cp deploy/ozon-parser.service /etc/systemd/system/ozon-parser.service
+#   sudo sed -i 's|/opt/new_ozon_parser|/ВАШ/DEPLOY_PATH|g' /etc/systemd/system/ozon-parser.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now ozon-parser.service
+#
+# Требует: Docker, в DEPLOY_PATH лежит docker-compose.prod.yml и .env с IMAGE или первый деплой через CI.
+
+[Unit]
+Description=New Ozon Parser (docker compose)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/new_ozon_parser
+# В каталоге должен быть .env с переменными приложения и строкой IMAGE=ghcr.io/<org>/<repo>:latest
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

@@ -1,15 +1,16 @@
 # Для деплоя: образ собирается в CI и пушится в GHCR.
 # Запуск: IMAGE=ghcr.io/OWNER/REPO:latest docker compose -f docker-compose.prod.yml up -d
+#
+# network_mode: host — чтобы контейнер видел Chrome на том же сервере по 127.0.0.1:9222
+# (парсер: USE_REMOTE_CHROME=true, REMOTE_CHROME_HTTP=http://127.0.0.1:9222 в .env)
 services:
   app:
     image: ${IMAGE}
-    ports:
-      - "8000:8000"
+    network_mode: host
     volumes:
       - ./data:/app/data
     env_file:
       - .env
     environment:
-      - CHROME_BIN=/usr/bin/chromium
       - DATABASE_URL=sqlite+aiosqlite:////app/data/ozon.db
     restart: unless-stopped

@@ -67,15 +67,19 @@ nano .env
 DATABASE_URL=sqlite+aiosqlite:////app/data/ozon.db
 TELEGRAM_BOT_TOKEN=ваш_токен
 TELEGRAM_CHAT_ID=ваш_chat_id
-SEARCH_URL1=https://www.ozon.ru/category/smartfony-15502/
-SEARCH_URL2=/?brand_was_predicted=true&category_was_predicted=true&deny_category_prediction=true&from_global=true&sorting=price&text=
+USE_REMOTE_CHROME=true
+REMOTE_CHROME_HTTP=http://127.0.0.1:9222
 SELECTOR_TILE_ROOT=.tile-root
 SELECTOR_PRICE=.c35_3_13-a6
 SELECTOR_NAME_LINK=.ki4_24
 SELECTOR_WAIT_TIMEOUT=30
 SELECTOR_MAX_CARDS=100
-CHROME_VERSION_MAIN=145
+TASK_HARD_TIMEOUT_SECONDS=600
 ```
+
+`REMOTE_CHROME_WS` можно не фиксировать в `.env`: после рестарта Chrome его browser-id меняется.
+Приложение автоматически берет актуальный `webSocketDebuggerUrl` через
+`REMOTE_CHROME_HTTP/json/version`.
 
 Создайте каталог для БД (том в compose примонтирует его):
 
@@ -83,7 +87,22 @@ CHROME_VERSION_MAIN=145
 mkdir -p data
 ```
 
+Добавьте строку с образом из GitHub Container Registry (подставьте свой `OWNER/REPO`, как в URL репозитория, **в нижнем регистре**):
+
+```env
+IMAGE=ghcr.io/owner/repo:latest
+```
+
+Docker Compose подставляет `IMAGE` из этого же `.env` при запуске `docker-compose.prod.yml`.
+
 Файл `.env` в репозиторий не коммитить.
+
+### Chrome на сервере (GUI + CDP)
+
+Парсер подключается к уже запущенному Chrome на **той же машине**. Образ в Docker использует `network_mode: host`, чтобы внутри контейнера работало `REMOTE_CHROME_HTTP=http://127.0.0.1:9222`.
+
+1. Поднимите Chrome с remote debugging (как у вас в `~/.config/autostart/`, порт **9222**).
+2. После перезагрузки сначала зайдите по RDP (чтобы стартовала сессия и Chrome), либо настройте автологин/отложенный старт приложения.
 
 ---
 
@@ -164,6 +183,38 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/
 3. По SSH зайдёт на сервер, выполнит `docker compose pull` и `up -d`.
 
 Обновление происходит без простоя (compose поднимает новый контейнер и останавливает старый). Данные БД сохраняются в каталоге `data/` на сервере.
+
+---
+
+## 8. Автозапуск после перезагрузки сервера
+
+1. **Docker** должен быть включён:
+
+   ```bash
+   sudo systemctl enable docker
+   ```
+
+2. В `docker-compose.prod.yml` у сервиса `app` указано `restart: unless-stopped` — после старта Docker контейнер поднимется сам.
+
+3. **Первый** запуск стека после ребута: если используете только Docker без systemd-обёртки, выполните один раз на сервере:
+
+   ```bash
+   cd $DEPLOY_PATH
+   docker compose -f docker-compose.prod.yml up -d
+   ```
+
+4. **Опционально — systemd-юнит**, чтобы `docker compose up -d` выполнялся при загрузке (удобно, если контейнер когда-то остановили вручную):
+
+   ```bash
+   sudo cp deploy/ozon-parser.service /etc/systemd/system/ozon-parser.service
+   sudo sed -i 's|/opt/new_ozon_parser|'"$DEPLOY_PATH"'|g' /etc/systemd/system/ozon-parser.service
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now ozon-parser.service
+   ```
+
+   В `DEPLOY_PATH` в `.env` обязательно есть `IMAGE=ghcr.io/...`.
+
+5. **Chrome** с CDP не входит в контейнер — поднимайте его на хосте (autostart в сессии пользователя, см. выше). Парсер в Docker ждёт `http://127.0.0.1:9222`.
 
 ---
 

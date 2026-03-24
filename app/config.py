@@ -7,8 +7,8 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-# При запуске из PyInstaller-бандла лаунчер задаёт OZON_PROJECT_ROOT (папка с бинарником).
-# Иначе — корень проекта по расположению этого файла.
+# Можно явно задать корень проекта через OZON_PROJECT_ROOT.
+# По умолчанию используется корень репозитория.
 _base = os.getenv("OZON_PROJECT_ROOT")
 BASE_DIR = Path(_base) if _base else Path(__file__).resolve().parent.parent
 
@@ -40,6 +40,7 @@ SELLER_TAG = (os.getenv("SELLER_TAG") or "").strip()
 
 # Remote Chrome (GUI VPS) via DevTools / CDP.
 REMOTE_CHROME_WS = (os.getenv("REMOTE_CHROME_WS") or "").strip()
+REMOTE_CHROME_HTTP = (os.getenv("REMOTE_CHROME_HTTP") or "http://127.0.0.1:9222").strip()
 USE_REMOTE_CHROME = (os.getenv("USE_REMOTE_CHROME", "false") or "false").strip().lower() in ("1", "true", "yes", "y")
 
 # Жёсткий таймаут одной задачи парсинга (сек)
