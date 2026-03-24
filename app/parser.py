@@ -517,7 +517,8 @@ def run_parse_listing_sync(
     found_products: list[dict] = []
 
     try:
-        if USE_REMOTE_CHROME and REMOTE_CHROME_WS:
+        # REMOTE_CHROME_WS необязателен: актуальный ws берётся из REMOTE_CHROME_HTTP/json/version
+        if USE_REMOTE_CHROME:
             logger.info("run_parse_listing_sync: task_id=%s using remote Chrome", task_id)
             found_products = _scrape_with_remote_chrome(
                 url=url,
@@ -553,7 +554,10 @@ def run_parse_listing_sync(
                     send_telegram_callback(msg)
             return found_products
 
-        raise RuntimeError("REMOTE_CHROME not configured")
+        raise RuntimeError(
+            "REMOTE_CHROME not configured: set USE_REMOTE_CHROME=true "
+            "and optionally REMOTE_CHROME_HTTP (e.g. http://127.0.0.1:9222) in .env"
+        )
 
     except Exception as e:
         logger.exception("run_parse_listing_sync: task_id=%s error %s", task_id, e)
