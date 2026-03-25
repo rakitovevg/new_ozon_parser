@@ -25,6 +25,19 @@ async def admin_index(request: Request, db: AsyncSession = Depends(get_db)):
     await sync_use_proxy_from_db()
     r = await db.execute(select(SearchTask).order_by(SearchTask.created_at.desc()))
     tasks = r.scalars().all()
+    seen_brand_lower: set[str] = set()
+    active_brands_lower: list[str] = []
+    for t in tasks:
+        if not t.is_active:
+            continue
+        raw = (t.brand or "").strip()
+        if not raw:
+            continue
+        key = raw.lower()
+        if key not in seen_brand_lower:
+            seen_brand_lower.add(key)
+            active_brands_lower.append(key)
+    active_brands_lower.sort()
     r3 = await db.execute(select(Proxy).order_by(Proxy.id))
     proxies = r3.scalars().all()
     r4 = await db.execute(select(FoundProduct).order_by(FoundProduct.created_at.desc()).limit(50))
@@ -43,6 +56,7 @@ async def admin_index(request: Request, db: AsyncSession = Depends(get_db)):
             "schedule_type": schedule["schedule_type"],
             "schedule_interval_seconds": schedule["schedule_interval_seconds"],
             "schedule_daily_time": schedule["schedule_daily_time"],
+            "active_brands_lower": active_brands_lower,
         },
     )
 
@@ -120,6 +134,29 @@ async def admin_run_all(background_tasks: BackgroundTasks, db: AsyncSession = De
     for t in tasks:
         background_tasks.add_task(run_search_task, t.id)
     return RedirectResponse(url="/?tab=tasks&run_all=1", status_code=303)
+
+
+@router.post("/admin/tasks/run-by-brand", response_class=RedirectResponse)
+async def admin_run_by_brand(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    form = await request.form()
+    brand_key = (form.get("brand") or "").strip().lower()
+    if not brand_key:
+        return RedirectResponse(url="/?tab=tasks", status_code=303)
+    r = await db.execute(select(SearchTask).where(SearchTask.is_active == True))
+    to_run = [
+        t
+        for t in r.scalars().all()
+        if t.run_status != "running" and (t.brand or "").strip().lower() == brand_key
+    ]
+    if not to_run:
+        return RedirectResponse(url="/?tab=tasks&run_brand_none=1", status_code=303)
+    for t in to_run:
+        background_tasks.add_task(run_search_task, t.id)
+    return RedirectResponse(url="/?tab=tasks&run_brand=1", status_code=303)
 
 
 @router.post("/admin/tasks/{task_id}/stop", response_class=RedirectResponse)

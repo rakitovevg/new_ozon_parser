@@ -12,6 +12,10 @@
 <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Поиск запущен.</div>
 {% elif request.query_params.get('run_all') %}
 <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Все активные задачи запущены.</div>
+{% elif request.query_params.get('run_brand') %}
+<div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Активные задачи выбранного бренда поставлены в очередь на запуск.</div>
+{% elif request.query_params.get('run_brand_none') %}
+<div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Нет активных задач с этим брендом вне статуса «выполняется», либо бренд не указан в задачах.</div>
 {% elif request.query_params.get('stop') %}
 <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Остановка задачи запрошена.</div>
 {% elif request.query_params.get('running') %}
@@ -123,11 +127,14 @@
 })();
 </script>
 
-<div class="flex items-center justify-between mb-4">
+<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
     <h2 class="text-lg font-semibold text-slate-900">Список задач</h2>
-    <form action="/admin/tasks/run-all" method="post" class="inline">
-        <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">Запустить все активные</button>
-    </form>
+    <div class="flex flex-wrap items-center gap-2">
+        <form action="/admin/tasks/run-all" method="post" class="inline">
+            <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">Запустить все активные</button>
+        </form>
+        <button type="button" id="openRunByBrandModal" class="px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-50 disabled:pointer-events-none" {% if not active_brands_lower %}disabled{% endif %}>Поиск по бренду</button>
+    </div>
 </div>
 <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
     <div class="overflow-x-auto">
@@ -205,6 +212,28 @@
     </div>
 </div>
 
+{# Модалка: запуск активных задач по бренду #}
+<div id="runByBrandModal" class="fixed inset-0 z-50 hidden" aria-hidden="true">
+    <div class="fixed inset-0 bg-slate-900/50" id="runByBrandModalBackdrop"></div>
+    <div class="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-2xl shadow-xl p-6 z-10">
+        <h3 class="text-lg font-semibold text-slate-900 mb-2">Поиск по бренду</h3>
+        <p class="text-sm text-slate-500 mb-4">Бренды из активных задач (без учёта регистра). После подтверждения запустятся все активные задачи с выбранным брендом.</p>
+        <form action="/admin/tasks/run-by-brand" method="post" id="runByBrandForm">
+            <label for="runByBrandSelect" class="block text-sm font-medium text-slate-700 mb-1">Бренд</label>
+            <select name="brand" id="runByBrandSelect" required class="w-full px-4 py-2 rounded-xl border border-slate-300 mb-4">
+                <option value="" disabled selected>— выберите бренд —</option>
+                {% for b in active_brands_lower %}
+                <option value="{{ b }}">{{ b }}</option>
+                {% endfor %}
+            </select>
+            <div class="flex gap-3">
+                <button type="submit" class="px-4 py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700">Запустить</button>
+                <button type="button" id="runByBrandModalClose" class="px-4 py-2 rounded-xl bg-slate-200 text-slate-700 font-medium hover:bg-slate-300">Отмена</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 {# Модальное окно редактирования задачи #}
 <div id="editTaskModal" class="fixed inset-0 z-50 hidden" aria-hidden="true">
     <div class="fixed inset-0 bg-slate-900/50" id="editTaskModalBackdrop"></div>
@@ -243,6 +272,39 @@
 </div>
 
 <script>
+(function() {
+    var rbModal = document.getElementById('runByBrandModal');
+    var rbOpen = document.getElementById('openRunByBrandModal');
+    var rbBackdrop = document.getElementById('runByBrandModalBackdrop');
+    var rbClose = document.getElementById('runByBrandModalClose');
+    var rbForm = document.getElementById('runByBrandForm');
+    var rbSelect = document.getElementById('runByBrandSelect');
+
+    function openRunByBrand() {
+        if (rbModal) rbModal.classList.remove('hidden');
+    }
+    function closeRunByBrand() {
+        if (rbModal) rbModal.classList.add('hidden');
+    }
+    if (rbOpen) rbOpen.addEventListener('click', openRunByBrand);
+    if (rbBackdrop) rbBackdrop.addEventListener('click', closeRunByBrand);
+    if (rbClose) rbClose.addEventListener('click', closeRunByBrand);
+
+    if (rbForm && rbSelect) {
+        rbForm.addEventListener('submit', function(e) {
+            var v = rbSelect.value;
+            if (!v) {
+                e.preventDefault();
+                return;
+            }
+            var label = rbSelect.options[rbSelect.selectedIndex].text;
+            if (!confirm('Запустить все активные задачи с брендом «' + label + '»?')) {
+                e.preventDefault();
+            }
+        });
+    }
+})();
+
 (function() {
     var sel = document.getElementById('global_schedule_type');
     var blockInterval = document.getElementById('global_schedule_interval_block');
