@@ -27,7 +27,7 @@ class SearchTask(Base):
     is_active = Column(Boolean, default=True)
     schedule_type = Column(String(32), nullable=True)   # 'interval' | 'daily'
     schedule_interval_seconds = Column(Integer, nullable=True)
-    schedule_daily_time = Column(String(8), nullable=True)  # "HH:MM"
+    schedule_daily_time = Column(String(256), nullable=True)  # "HH:MM" или "HH:MM, HH:MM, ..."
     run_status = Column(String(32), default="idle")  # idle | running | completed | failed | cancelled
     run_error = Column(Text, nullable=True)
     last_run_at = Column(DateTime, nullable=True)

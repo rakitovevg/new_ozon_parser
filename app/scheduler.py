@@ -212,9 +212,11 @@ async def run_all_active_tasks() -> None:
 async def refresh_scheduler() -> None:
     """Перечитывает глобальное расписание из БД и вешает одну job на запуск всех активных задач."""
     from app.models import Setting
-    # Удаляем старую глобальную job
+    # Удаляем старые глобальные jobs (может быть несколько при "daily" с несколькими временами)
     try:
-        scheduler.remove_job(JOB_GLOBAL_RUN_ALL)
+        for job in scheduler.get_jobs():
+            if job.id == JOB_GLOBAL_RUN_ALL or job.id.startswith(f"{JOB_GLOBAL_RUN_ALL}_"):
+                scheduler.remove_job(job.id)
     except Exception:
         pass
     # Читаем глобальное расписание из настроек
@@ -241,19 +243,38 @@ async def refresh_scheduler() -> None:
         )
         logger.info("refresh_scheduler: global interval %s sec", interval_sec)
     elif schedule_type == "daily" and schedule_daily_time:
-        parts = schedule_daily_time.strip().split(":")
-        try:
-            h, m = int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
-        except (ValueError, IndexError):
-            h, m = 9, 0
-        scheduler.add_job(
-            run_all_active_tasks,
-            "cron",
-            hour=h,
-            minute=m,
-            id=JOB_GLOBAL_RUN_ALL,
-            replace_existing=True,
-        )
-        logger.info("refresh_scheduler: global daily at %02d:%02d", h, m)
+        # Поддержка списка времени через запятую:
+        # "09:00" или "09:00, 13:30, 18:45"
+        raw_times = [p.strip() for p in (schedule_daily_time or "").split(",") if p.strip()]
+        parsed_times: list[tuple[int, int]] = []
+        for raw in raw_times:
+            parts = raw.split(":")
+            try:
+                h = int(parts[0])
+                m = int(parts[1]) if len(parts) > 1 else 0
+            except (ValueError, IndexError):
+                logger.warning("refresh_scheduler: invalid daily time token %r", raw)
+                continue
+            if not (0 <= h <= 23 and 0 <= m <= 59):
+                logger.warning("refresh_scheduler: daily time out of range %r", raw)
+                continue
+            parsed_times.append((h, m))
+
+        if parsed_times:
+            for h, m in parsed_times:
+                scheduler.add_job(
+                    run_all_active_tasks,
+                    "cron",
+                    hour=h,
+                    minute=m,
+                    id=f"{JOB_GLOBAL_RUN_ALL}_{h:02d}{m:02d}",
+                    replace_existing=True,
+                )
+            logger.info(
+                "refresh_scheduler: global daily at %s",
+                ", ".join([f"{h:02d}:{m:02d}" for h, m in parsed_times]),
+            )
+        else:
+            logger.info("refresh_scheduler: no valid daily times in %r", schedule_daily_time)
     else:
         logger.info("refresh_scheduler: no global schedule")
