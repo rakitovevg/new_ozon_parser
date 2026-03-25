@@ -160,7 +160,6 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
         model_words = model_filter.lower().split(" ")
 
     out: list[dict] = []
-    seen_links: set[str] = set()
     count = 0
 
     for tile in tiles[: max(1, int(SELECTOR_MAX_CARDS or 100))]:
@@ -179,11 +178,6 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
                 link = raw_href or ""
                 logger.info(f"link = {link}")
             # если ссылки нет, всё равно учитываем товар (link = "")
-            if link:
-                if link in seen_links:
-                    logger.info(f"tile #{count}: пропуск — дубликат ссылки")
-                    continue
-                seen_links.add(link)
 
             # пытаемся вытащить SKU из ссылки и найти остаток в таблице расширения
             sku = None
