@@ -51,6 +51,10 @@ TRUSTED_PROXY_HOSTS = (os.getenv("TRUSTED_PROXY_HOSTS") or "*").strip()
 # Жёсткий таймаут одной задачи парсинга (сек)
 TASK_HARD_TIMEOUT_SECONDS = int(os.getenv("TASK_HARD_TIMEOUT_SECONDS", "600") or "600")
 
+# APScheduler: часовой пояс для cron (например Europe/Moscow) и автоповтор после ошибки
+SCHEDULER_TIMEZONE = (os.getenv("SCHEDULER_TIMEZONE") or "UTC").strip()
+FAILED_TASK_RETRY_SECONDS = int(os.getenv("FAILED_TASK_RETRY_SECONDS", "300") or "300")
+
 # Глобальный режим прокси (применяется ко всем задачам, читается на лету)
 # Хранится в БД (таблица settings), здесь кэш для быстрого доступа
 _use_proxy_global: Optional[bool] = None

@@ -38,6 +38,7 @@
 <div class="card bg-white rounded-2xl border border-slate-200 p-6 shadow-sm mb-8 max-w-3xl">
     <h2 class="text-lg font-semibold text-slate-900 mb-4">Новая задача</h2>
     <form action="/admin/tasks/create" method="post" class="space-y-4">
+        {% if filter_brand %}<input type="hidden" name="filter_brand" value="{{ filter_brand }}">{% endif %}
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div class="sm:col-span-3">
                 <label for="url" class="block text-sm font-medium text-slate-700 mb-1">URL листинга Ozon</label>
@@ -81,6 +82,7 @@
         <h3 class="text-base font-semibold text-slate-900 mb-3">Расписание для всех задач</h3>
         <p class="text-sm text-slate-500 mb-4">По этому расписанию запускаются все активные задачи. Сохранение подхватывается сразу.</p>
         <form action="/admin/settings/schedule" method="post" class="flex flex-wrap items-end gap-4">
+            {% if filter_brand %}<input type="hidden" name="filter_brand" value="{{ filter_brand }}">{% endif %}
             <div>
                 <label for="global_schedule_type" class="block text-sm font-medium text-slate-700 mb-1">Режим</label>
                 <select name="schedule_type" id="global_schedule_type" class="w-48 px-4 py-2 rounded-xl border border-slate-300">
@@ -130,7 +132,18 @@
 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
     <h2 class="text-lg font-semibold text-slate-900">Список задач</h2>
     <div class="flex flex-wrap items-center gap-2">
+        <form method="get" action="/" class="flex items-center gap-2 mr-2">
+            <input type="hidden" name="tab" value="tasks">
+            <label for="filter_brand_select" class="text-sm text-slate-600 whitespace-nowrap">Бренд</label>
+            <select name="filter_brand" id="filter_brand_select" class="px-3 py-2 rounded-lg border border-slate-300 text-sm max-w-[12rem]" onchange="this.form.submit()">
+                <option value="">Все</option>
+                {% for b in filter_brand_options %}
+                <option value="{{ b }}" {% if filter_brand == b %}selected{% endif %}>{{ b }}</option>
+                {% endfor %}
+            </select>
+        </form>
         <form action="/admin/tasks/run-all" method="post" class="inline">
+            {% if filter_brand %}<input type="hidden" name="filter_brand" value="{{ filter_brand }}">{% endif %}
             <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">Запустить все активные</button>
         </form>
         <button type="button" id="openRunByBrandModal" class="px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-50 disabled:pointer-events-none" {% if not active_brands_lower %}disabled{% endif %}>Поиск по бренду</button>
@@ -185,7 +198,7 @@
                     <td class="px-6 py-4 text-slate-500 text-sm">{{ t.created_at.strftime('%d.%m.%Y %H:%M') if t.created_at else '—' }}</td>
                     <td class="px-6 py-4 flex flex-wrap gap-2">
                         {% if rs == 'running' %}
-                        <form action="/admin/tasks/{{ t.id }}/stop" method="post" class="inline"><button type="submit" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700">Остановить</button></form>
+                        <form action="/admin/tasks/{{ t.id }}/stop" method="post" class="inline">{% if filter_brand %}<input type="hidden" name="filter_brand" value="{{ filter_brand }}">{% endif %}<button type="submit" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700">Остановить</button></form>
                         {% endif %}
                         {% if rs != 'running' %}
                         <button type="button" class="edit-task-btn px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200"
@@ -195,9 +208,9 @@
                                 data-model="{{ t.model or '' }}"
                                 data-min-price="{{ t.min_price }}"
                                 data-is-active="{{ '1' if t.is_active else '0' }}">Редактировать</button>
-                        <form action="/admin/tasks/{{ t.id }}/run" method="post" class="inline"><button type="submit" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary-600 text-white hover:bg-primary-700">Запустить</button></form>
-                        <form action="/admin/tasks/{{ t.id }}/toggle-active" method="post" class="inline"><button type="submit" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-200 text-slate-700 hover:bg-slate-300">{{ 'Выключить' if t.is_active else 'Включить' }}</button></form>
-                        <form action="/admin/tasks/{{ t.id }}/delete" method="post" class="inline" onsubmit="return confirm('Удалить задачу?');"><button type="submit" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-100 text-red-700 hover:bg-red-200">Удалить</button></form>
+                        <form action="/admin/tasks/{{ t.id }}/run" method="post" class="inline">{% if filter_brand %}<input type="hidden" name="filter_brand" value="{{ filter_brand }}">{% endif %}<button type="submit" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary-600 text-white hover:bg-primary-700">Запустить</button></form>
+                        <form action="/admin/tasks/{{ t.id }}/toggle-active" method="post" class="inline">{% if filter_brand %}<input type="hidden" name="filter_brand" value="{{ filter_brand }}">{% endif %}<button type="submit" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-200 text-slate-700 hover:bg-slate-300">{{ 'Выключить' if t.is_active else 'Включить' }}</button></form>
+                        <form action="/admin/tasks/{{ t.id }}/delete" method="post" class="inline" onsubmit="return confirm('Удалить задачу?');">{% if filter_brand %}<input type="hidden" name="filter_brand" value="{{ filter_brand }}">{% endif %}<button type="submit" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-100 text-red-700 hover:bg-red-200">Удалить</button></form>
                         {% endif %}
                     </td>
                 </tr>
@@ -205,7 +218,7 @@
                 <tr class="bg-red-50/50"><td colspan="7" class="px-6 py-2 text-sm text-red-700">{{ t.run_error }}</td></tr>
                 {% endif %}
                 {% else %}
-                <tr><td colspan="7" class="px-6 py-12 text-center text-slate-500">Нет задач. Создайте задачу выше.</td></tr>
+                <tr><td colspan="7" class="px-6 py-12 text-center text-slate-500">{% if filter_brand %}Нет задач с выбранным брендом.{% else %}Нет задач. Создайте задачу выше.{% endif %}</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -219,6 +232,7 @@
         <h3 class="text-lg font-semibold text-slate-900 mb-2">Поиск по бренду</h3>
         <p class="text-sm text-slate-500 mb-4">Бренды из активных задач (без учёта регистра). После подтверждения запустятся все активные задачи с выбранным брендом.</p>
         <form action="/admin/tasks/run-by-brand" method="post" id="runByBrandForm">
+            {% if filter_brand %}<input type="hidden" name="filter_brand" value="{{ filter_brand }}">{% endif %}
             <label for="runByBrandSelect" class="block text-sm font-medium text-slate-700 mb-1">Бренд</label>
             <select name="brand" id="runByBrandSelect" required class="w-full px-4 py-2 rounded-xl border border-slate-300 mb-4">
                 <option value="" disabled selected>— выберите бренд —</option>

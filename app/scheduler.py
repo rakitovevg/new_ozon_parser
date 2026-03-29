@@ -6,13 +6,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.date import DateTrigger
 from sqlalchemy import select
 
-from app.config import get_use_proxy_global, TASK_HARD_TIMEOUT_SECONDS
+from app.config import (
+    FAILED_TASK_RETRY_SECONDS,
+    get_use_proxy_global,
+    SCHEDULER_TIMEZONE,
+    TASK_HARD_TIMEOUT_SECONDS,
+)
 from app.database import async_session
 from app.models import Brand, SearchTask, FoundProduct
 from app.parser import build_search_url, run_parse_listing_sync
@@ -22,9 +30,23 @@ from app.events import broadcaster
 
 logger = logging.getLogger(__name__)
 
-scheduler = AsyncIOScheduler()
+try:
+    _scheduler_tz = ZoneInfo(SCHEDULER_TIMEZONE)
+except Exception:
+    logger.warning("scheduler: invalid SCHEDULER_TIMEZONE=%r, using UTC", SCHEDULER_TIMEZONE)
+    _scheduler_tz = ZoneInfo("UTC")
+
+scheduler = AsyncIOScheduler(
+    timezone=_scheduler_tz,
+    job_defaults={
+        # если процесс был занят, cron не «проглатывать»; выполнить с задержкой
+        "misfire_grace_time": 3600,
+        "coalesce": False,
+    },
+)
 JOB_PREFIX = "search_task_"
 JOB_GLOBAL_RUN_ALL = "global_run_all"
+JOB_RETRY_PREFIX = "retry_task_"
 # Важно: один профиль/Chrome лучше не грузить параллельно.
 _executor = ThreadPoolExecutor(max_workers=1)
 
@@ -76,11 +98,51 @@ def _found_products_callback_sync(task_id: int, loop, rec: dict) -> None:
         pass
 
 
-async def run_search_task(task_id: int, from_scheduler: bool = False) -> None:
+def cancel_pending_retries(task_id: int) -> None:
+    """Снимает отложенный автоповтор после сбоя, если задачу запустили вручную или снова по расписанию."""
+    prefix = f"{JOB_RETRY_PREFIX}{task_id}_"
+    for job in list(scheduler.get_jobs()):
+        if job.id.startswith(prefix):
+            try:
+                scheduler.remove_job(job.id)
+            except Exception:
+                pass
+
+
+def schedule_failed_task_retry(task_id: int) -> None:
+    """Один повтор через FAILED_TASK_RETRY_SECONDS (новая job, старые pending на этот task_id снимаются)."""
+    cancel_pending_retries(task_id)
+    run_at = datetime.now(_scheduler_tz) + timedelta(seconds=FAILED_TASK_RETRY_SECONDS)
+    job_id = f"{JOB_RETRY_PREFIX}{task_id}_{uuid.uuid4().hex[:12]}"
+    scheduler.add_job(
+        run_search_task,
+        DateTrigger(run_date=run_at),
+        args=[task_id],
+        kwargs={"from_scheduler": False, "retry_after_failure": True},
+        id=job_id,
+        replace_existing=False,
+    )
+    logger.info(
+        "schedule_failed_task_retry: task_id=%s scheduled at %s (%s sec)",
+        task_id,
+        run_at.isoformat(),
+        FAILED_TASK_RETRY_SECONDS,
+    )
+
+
+async def run_search_task(
+    task_id: int,
+    from_scheduler: bool = False,
+    retry_after_failure: bool = False,
+) -> None:
+    cancel_pending_retries(task_id)
     async with async_session() as db:
         r = await db.execute(select(SearchTask).where(SearchTask.id == task_id))
         task = r.scalar_one_or_none()
         if not task:
+            return
+        if retry_after_failure and not task.is_active:
+            logger.info("run_search_task: task_id=%s retry skipped (task inactive)", task_id)
             return
         if from_scheduler and not task.is_active:
             return
@@ -167,6 +229,12 @@ async def run_search_task(task_id: int, from_scheduler: bool = False) -> None:
         error_for_telegram = run_error
     clear_cancel(task_id)
 
+    if final_status == "failed":
+        try:
+            schedule_failed_task_retry(task_id)
+        except Exception:
+            logger.exception("run_search_task: schedule_failed_task_retry failed for task_id=%s", task_id)
+
     # Если была ошибка, отправляем краткое уведомление в Telegram (без падения при сбое отправки).
     if error_for_telegram:
         try:
@@ -197,16 +265,20 @@ async def run_search_task(task_id: int, from_scheduler: bool = False) -> None:
 
 
 async def run_all_active_tasks() -> None:
-    """Запускает все активные задачи (вызывается по глобальному расписанию)."""
+    """Запускает все активные задачи по очереди (один парсер в executor — без лавины create_task)."""
     async with async_session() as db:
-        r = await db.execute(select(SearchTask).where(SearchTask.is_active == True))
-        tasks = r.scalars().all()
-    for task in tasks:
-        if task.run_status == "running":
-            continue
-        asyncio.create_task(run_search_task(task.id, from_scheduler=True))
-    if tasks:
-        logger.info("run_all_active_tasks: started %s task(s)", len([t for t in tasks if t.run_status != "running"]))
+        r = await db.execute(
+            select(SearchTask.id).where(SearchTask.is_active == True).order_by(SearchTask.id),
+        )
+        task_ids = [row[0] for row in r.all()]
+    for tid in task_ids:
+        async with async_session() as db:
+            r2 = await db.execute(select(SearchTask).where(SearchTask.id == tid))
+            t = r2.scalar_one_or_none()
+            if not t or not t.is_active or t.run_status == "running":
+                continue
+        await run_search_task(tid, from_scheduler=True)
+    logger.info("run_all_active_tasks: finished queue (%s id(s))", len(task_ids))
 
 
 async def refresh_scheduler() -> None:
