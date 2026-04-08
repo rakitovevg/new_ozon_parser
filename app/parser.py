@@ -361,7 +361,7 @@ def _scrape_with_remote_chrome(
 
     def _extract_seller_from_product_page(p) -> str | None:
         # Захардкоженный селектор продавца (как ты просил — без SELLER_TAG)
-        seller_selector = 'span.b35_3_23-b7[style*="-webkit-line-clamp"]'
+        seller_selector = 'span.b35_3_26-b7[style*="-webkit-line-clamp"]'
         try:
             p.wait_for_selector(seller_selector, timeout=8000)
         except Exception:
@@ -369,7 +369,7 @@ def _scrape_with_remote_chrome(
             return None
         try:
             txt = p.evaluate('''() => {
-            const span = document.querySelector('span.b35_3_23-b7[style*="-webkit-line-clamp"]');
+            const span = document.querySelector('span.b35_3_26-b7[style*="-webkit-line-clamp"]');
             return span ? span.innerText.trim() : null;
         }''')
             
