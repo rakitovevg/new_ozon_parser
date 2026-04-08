@@ -34,6 +34,81 @@ logger = logging.getLogger(__name__)
 OZON_BASE_URL = "https://www.ozon.ru"
 
 
+def _digits_price(raw: str) -> int:
+    if not raw:
+        return 0
+    try:
+        return int(re.sub(r"\D", "", raw)) or 0
+    except Exception:
+        return 0
+
+
+def _parse_price_int_from_tile(tile) -> int:
+    """
+    Цена в карточке листинга. Сначала SELECTOR_PRICE из .env, затем блок c35_3_15-a0
+    (первый tsHeadline500Medium — актуальная цена; второй span — старая), далее запасные варианты.
+    """
+    if SELECTOR_PRICE and str(SELECTOR_PRICE).strip():
+        try:
+            el = tile.select_one(str(SELECTOR_PRICE).strip())
+            if el:
+                v = _digits_price(el.get_text(" ", strip=True))
+                if v > 0:
+                    return v
+        except Exception:
+            logger.debug("price: SELECTOR_PRICE %r failed", SELECTOR_PRICE, exc_info=True)
+
+    for sel in (
+        ".c35_3_15-a0 span.tsHeadline500Medium",
+        "div.c35_3_15-a0 > span.tsHeadline500Medium",
+        ".c35_3_15-a0 > span.tsHeadline500Medium",
+        "span.tsHeadline500Medium.c35_3_13-a1",
+        "span.tsHeadline500Medium",
+        "span[class*='tsHeadline500Medium']",
+        "span[class*='tsHeadline'][class*='Medium']",
+    ):
+        try:
+            el = tile.select_one(sel)
+            if el:
+                v = _digits_price(el.get_text(" ", strip=True))
+                if v >= 10:
+                    return v
+        except Exception:
+            continue
+
+    for el in tile.find_all("span"):
+        t = el.get_text(" ", strip=True) or ""
+        if "₽" in t or "руб" in t.lower():
+            v = _digits_price(t)
+            if v > 0:
+                return v
+
+    for el in tile.select("span[class*='Headline'], span[class*='headline']"):
+        v = _digits_price(el.get_text(" ", strip=True))
+        if v >= 100:
+            return v
+
+    blob = tile.get_text(" ", strip=True) or ""
+    m = re.search(r"([\d\s\u00a0\u202f]{2,})\s*₽", blob)
+    if m:
+        return _digits_price(m.group(1))
+    return 0
+
+
+def _is_ucenka_marked_text(text: str | None) -> bool:
+    """Уценка в произвольном тексте: название карточки или акция из mpstats."""
+    if not text or not str(text).strip():
+        return False
+    n = str(text).lower().replace("ё", "е")
+    if "уценка" in n:
+        return True
+    if "уценен" in n:
+        return True
+    if "уценнен" in n:
+        return True
+    return False
+
+
 def _resolve_remote_chrome_ws() -> str:
     """
     Resolve current Chrome DevTools websocket URL.
@@ -192,9 +267,7 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
             # даже если по SKU нет метрик, просто берём пустой словарь
             metrics = sku_metrics.get(sku) or {}
 
-            price_el = tile.select_one('span.tsHeadline500Medium.c35_3_13-a1')
-            price_text = (price_el.get_text(" ", strip=True) if price_el else "") or ""
-            price = int(re.sub(r"\D", "", price_text)) if price_text else 0
+            price = _parse_price_int_from_tile(tile)
 
             # аккуратно достаём name/link из соседнего узла, он может быть None
             #sibling = name_el.nextSibling
@@ -205,6 +278,13 @@ def _parse_listing_html(html: str, min_price: float, model_filter: Optional[str]
             #    logger.info(f"tile #{count}: пропуск — nextSibling без getText()")
             #    continue
             name = name_el.getText()
+            if _is_ucenka_marked_text(name):
+                logger.info(f"tile #{count}: пропуск — в названии уценка")
+                continue
+            promo_mpstats = metrics.get("promo")
+            if promo_mpstats is not None and _is_ucenka_marked_text(str(promo_mpstats)):
+                logger.info(f"tile #{count}: пропуск — акция mpstats (уценка)")
+                continue
 
             logger.info(
                 "tile #%s: price=%s, name=%s, sku=%s, model_words=%s",

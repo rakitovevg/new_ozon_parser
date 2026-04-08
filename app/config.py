@@ -30,7 +30,8 @@ SEARCH_URL2 = os.getenv("SEARCH_URL2", "")
 
 # Селекторы страницы листинга Ozon (из .env)
 SELECTOR_TILE_ROOT = os.getenv("SELECTOR_TILE_ROOT", ".tile-root")
-SELECTOR_PRICE = os.getenv("SELECTOR_PRICE", ".c35_3_13-a6")
+# Карточка листинга: блок с ценами — первый tsHeadline500Medium = текущая цена
+SELECTOR_PRICE = os.getenv("SELECTOR_PRICE", ".c35_3_15-a0 span.tsHeadline500Medium")
 SELECTOR_NAME_LINK = os.getenv("SELECTOR_NAME_LINK", ".ki4_24")
 SELECTOR_WAIT_TIMEOUT = int(os.getenv("SELECTOR_WAIT_TIMEOUT", "30") or "30")
 SELECTOR_MAX_CARDS = int(os.getenv("SELECTOR_MAX_CARDS", "100") or "100")
