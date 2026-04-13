@@ -338,6 +338,116 @@ python3 scripts/healthcheck_telegram.py; echo exit:$?
 
 ---
 
+## 11. WireGuard: доступ к Telegram Bot API при блокировке (РФ)
+
+Если с сервера **не открывается** `https://api.telegram.org` (таймаут в `curl`, ошибки `ConnectTimeout` в логах), а **Ozon и остальной интернет** должны идти как раньше, поднимается **туннель только для подсетей Telegram**: на **зарубежном VPS** — WireGuard **сервер**, на **сервере с парсером** — **клиент**. MTProto/MTProxy для приложения Telegram с телефона к этому **не относится**; бот ходит по **HTTPS** на `api.telegram.org`.
+
+### Что понадобится
+
+- Второй VPS **за пределами РФ** (любой недорогой, статический IPv4).
+- На обоих хостах: Ubuntu/Debian, открытый **UDP-порт** на зарубежном VPS (например **51820**) в фаерволе и у провайдера.
+
+Актуальный список подсетей Telegram — на странице **[core.telegram.org/cidr](https://core.telegram.org/cidr)**. Ниже — типичный набор **IPv4** для split-tunnel (его можно вставить в `AllowedIPs` клиента; при смене сетей у Telegram обновите список с официальной страницы).
+
+### A. Зарубежный VPS (WireGuard «сервер»)
+
+```bash
+sudo apt-get update && sudo apt-get install -y wireguard
+
+umask 077
+wg genkey | tee /etc/wireguard/server_private.key | wg pubkey > /etc/wireguard/server_public.key
+wg genkey | tee /etc/wireguard/client_private.key | wg pubkey > /etc/wireguard/client_public.key
+
+# Подставьте внешний IP этого VPS
+export WG_ENDPOINT=$(curl -4 -s ifconfig.me || hostname -I | awk '{print $1}')
+echo "Endpoint IP: $WG_ENDPOINT"
+```
+
+Создайте `/etc/wireguard/wg0.conf` (замените `10.66.66.1`/`10.66.66.2` при желании на другую частную подсеть `/24`):
+
+```ini
+[Interface]
+Address = 10.66.66.1/24
+ListenPort = 51820
+PrivateKey = <СОДЕРЖИМОЕ /etc/wireguard/server_private.key>
+PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+# Если внешний интерфейс не eth0, замените на ens3, enp0s3 и т.д. (см. ip route)
+
+[Peer]
+# Клиент — сервер с парсером (РФ)
+PublicKey = <СОДЕРЖИМОЕ /etc/wireguard/client_public.key>
+AllowedIPs = 10.66.66.2/32
+```
+
+Включите форвардинг и поднимите интерфейс:
+
+```bash
+echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-wireguard-forward.conf
+sudo sysctl -p /etc/sysctl.d/99-wireguard-forward.conf
+
+sudo wg-quick up wg0
+sudo systemctl enable wg-quick@wg0
+```
+
+Фаервол (пример для `ufw`):
+
+```bash
+sudo ufw allow 51820/udp
+sudo ufw allow OpenSSH
+sudo ufw enable
+```
+
+**Важно:** в `PostUp` интерфейс с интернетом должен совпадать с реальным (`ip -br a` / `ip route get 1.1.1.1`).
+
+### B. Сервер с парсером (РФ, WireGuard «клиент»)
+
+Скопируйте на этот хост **`client_private.key`** и **`server_public.key`** с зарубежного VPS (через `scp`, только по SSH).
+
+Создайте `/etc/wireguard/wg0.conf`:
+
+```ini
+[Interface]
+Address = 10.66.66.2/24
+PrivateKey = <СОДЕРЖИМОЕ client_private.key>
+
+[Peer]
+PublicKey = <СОДЕРЖИМОЕ server_public.key>
+Endpoint = <IP_ЗАРУБЕЖНОГО_VPS>:51820
+PersistentKeepalive = 25
+# Только подсети Telegram (split-tunnel). Список обновляйте по https://core.telegram.org/cidr
+AllowedIPs = 91.108.0.0/16, 149.154.160.0/20, 185.76.151.0/24, 91.105.192.0/23
+```
+
+При необходимости добавьте остальные IPv4 с [core.telegram.org/cidr](https://core.telegram.org/cidr) через запятую в одну строку `AllowedIPs = ...`.
+
+```bash
+sudo sysctl -p /etc/sysctl.d/99-wireguard-forward.conf  # или локально: net.ipv4.ip_forward=1 не обязателен только для клиента
+sudo wg-quick up wg0
+sudo systemctl enable wg-quick@wg0
+```
+
+Проверка с **сервера с парсером**:
+
+```bash
+sudo wg show
+curl -4 -v --connect-timeout 15 "https://api.telegram.org/bot<TOKEN>/getMe"
+```
+
+Должен быть ответ HTTP **200** и JSON с `"ok":true`. Токен не публикуйте в чатах и логах.
+
+Контейнеры Docker на этом же хосте обычно используют **маршрутизацию ядра хоста**: трафик к `149.154.x.x` пойдёт в туннель **без** изменений в `docker-compose.yml`. Если у вас нестандартная схема сети Docker — проверьте `curl` из контейнера: `docker compose -f docker-compose.prod.yml exec app curl -4 -s -o /dev/null -w "%{http_code}" https://api.telegram.org/`.
+
+### Если не хватает подсети
+
+Добавьте недостающий префикс в `AllowedIPs` на **клиенте**, перезапустите: `sudo wg-quick down wg0 && sudo wg-quick up wg0`.
+
+### Полный туннель (не рекомендуется на «боевом» сервере)
+
+Теоретически можно указать `AllowedIPs = 0.0.0.0/0`, тогда **весь** исходящий IPv4 пойдёт через зарубежный VPS — проще отладка, но выше нагрузка и риск оборвать SSH, если не настроен отдельный маршрут к вашему IP. Для продакшена предпочтительнее **только подсети Telegram** из cidr.
+
+---
+
 ## Возможные проблемы
 
 **Ошибка при SSH в Actions**  
@@ -357,6 +467,12 @@ python3 scripts/healthcheck_telegram.py; echo exit:$?
 
 ```bash
 docker compose -f docker-compose.prod.yml logs -f app
+```
+
+**Запуск удаленного рабочего стола**
+
+```bash
+xfreerdp /v:193.187.92.56:3389 /u:parcer /p:'akitov2009' /sec:rdp /cert:ignore /network:lan /bpp:24
 ```
 
 

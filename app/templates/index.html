@@ -143,7 +143,6 @@
             </select>
         </form>
         <form action="/admin/tasks/run-all" method="post" class="inline">
-            {% if filter_brand %}<input type="hidden" name="filter_brand" value="{{ filter_brand }}">{% endif %}
             <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">Запустить все активные</button>
         </form>
         <button type="button" id="openRunByBrandModal" class="px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-50 disabled:pointer-events-none" {% if not active_brands_lower %}disabled{% endif %}>Поиск по бренду</button>

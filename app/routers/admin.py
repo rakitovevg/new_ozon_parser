@@ -172,10 +172,11 @@ async def admin_task_run(request: Request, task_id: int, background_tasks: Backg
 
 @router.post("/admin/tasks/run-all", response_class=RedirectResponse)
 async def admin_run_all(request: Request, background_tasks: BackgroundTasks):
-    form = await request.form()
-    fb = _filter_brand_from_form(form)
+    await request.form()
     background_tasks.add_task(run_all_active_tasks)
-    return RedirectResponse(url=_tasks_tab_url(run_all="1", filter_brand=fb), status_code=303)
+    # Для "Запустить все активные" фильтр по бренду намеренно сбрасываем:
+    # иначе выглядит так, будто стартовали только задачи выбранного бренда.
+    return RedirectResponse(url=_tasks_tab_url(run_all="1"), status_code=303)
 
 
 @router.post("/admin/tasks/run-by-brand", response_class=RedirectResponse)
